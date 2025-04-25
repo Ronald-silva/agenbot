@@ -1,4 +1,5 @@
 // controllers/webhook.js
+// Carrega variáveis de ambiente (em desenvolvimento via .env)
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -42,6 +43,11 @@ async function checkInstance() {
 // Handler principal do webhook
 module.exports = async function webhook(req, res) {
   console.log('🔥 Payload recebido:', JSON.stringify(req.body));
+
+  // Evita loop: ignora callbacks de mensagens enviadas pela própria API
+  if (req.body.fromApi === true || req.body.event !== 'incoming-message') {
+    return res.sendStatus(200);
+  }
 
   // Extrai o telefone do payload (suporte a vários campos possíveis)
   let rawPhone =
