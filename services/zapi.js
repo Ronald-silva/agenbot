@@ -5,11 +5,20 @@ if (process.env.NODE_ENV !== 'production') {
 const axios = require('axios');
 
 module.exports = async (phone, message) => {
-  const url = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE_ID}/send-messages`;
+  const INSTANCE_ID    = process.env.ZAPI_INSTANCE_ID.trim();
+  const INSTANCE_TOKEN = process.env.ZAPI_INSTANCE_TOKEN.trim();
+  const CLIENT_TOKEN   = process.env.ZAPI_CLIENT_TOKEN.trim();
 
-  return await axios.post(
+  const url = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-text`;
+
+  return axios.post(
     url,
     { phone, message },
-    { headers: { 'Client-Token': process.env.ZAPI_TOKEN } }
+    {
+      headers: {
+        'Content-Type':  'application/json',
+        'Client-Token':  CLIENT_TOKEN
+      }
+    }
   );
 };
