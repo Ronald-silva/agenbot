@@ -1,4 +1,3 @@
-// server.js
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
@@ -20,6 +19,23 @@ app.post('/webhook', webhook);
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
 
-app.listen(PORT, HOST, () => {
+// **ÚNICA** chamada a listen:
+const server = app.listen(PORT, HOST, () => {
   console.log(`✅ Servidor rodando em http://${HOST}:${PORT}`);
+});
+
+// (Opcional) Tratamento de erro no listen:
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`❌ Porta ${PORT} já está em uso. Finalize o outro processo ou mude a porta.`);
+  } else {
+    console.error(err);
+  }
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  console.log('Sinal SIGTERM recebido, realizando desligamento gracioso...');
+  // Código de limpeza aqui
+  process.exit(0);
 });
