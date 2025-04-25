@@ -1,113 +1,116 @@
-// controllers/webhook.js
+// controllers/webhook.js (RAG in-memory via contexts.json)
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
 
-const axios  = require('axios');
-const OpenAI = require('openai');
+const axios    = require('axios');
+const OpenAI   = require('openai');
+const contexts = require('../contexts.json'); // array of {snippet, embedding}
 
-// --- Variáveis de ambiente ---
+// Vars de ambiente
 const INSTANCE_ID    = process.env.ZAPI_INSTANCE_ID?.trim();
 const INSTANCE_TOKEN = process.env.ZAPI_INSTANCE_TOKEN?.trim();
 const CLIENT_TOKEN   = process.env.ZAPI_CLIENT_TOKEN?.trim();
 const OPENAI_KEY     = process.env.OPENAI_API_KEY?.trim();
 
 if (!INSTANCE_ID || !INSTANCE_TOKEN || !CLIENT_TOKEN || !OPENAI_KEY) {
-  console.error(
-    '❌ Defina todas as vars: ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN, ZAPI_CLIENT_TOKEN e OPENAI_API_KEY'
-  );
+  console.error('❌ Defina ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN, ZAPI_CLIENT_TOKEN e OPENAI_API_KEY');
   process.exit(1);
 }
 
 const openai = new OpenAI({ apiKey: OPENAI_KEY });
 
-// --- Função de check da instância Z-API ---
+// Sem banco: simples função de similaridade
+function cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na  += a[i] * a[i];
+    nb  += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-8);
+}
+
+// Recupera contexto do JSON em memória
+async function retrieveContext(question, topK = 5) {
+  // 1) embedding da pergunta
+  const embedResp = await openai.embeddings.create({
+    model: 'text-embedding-ada-002',
+    input: question
+  });
+  const qv = embedResp.data[0].embedding;
+
+  // 2) calcula similaridade
+  const sims = contexts.map(c => ({ snippet: c.snippet, score: cosine(qv, c.embedding) }));
+
+  // 3) pega os topK
+  return sims
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+    .map(({ snippet }) => snippet)
+    .join('\n---\n');
+}
+
+// Verifica status da instância Z-API
 async function checkInstance() {
   const url = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/status`;
-  const { data } = await axios.get(url, {
-    headers: { 'Client-Token': CLIENT_TOKEN }
-  });
+  const { data } = await axios.get(url, { headers: { 'Client-Token': CLIENT_TOKEN } });
   console.log('🔍 Z-API status:', data);
   if (!data.connected || !data.smartphoneConnected) {
     throw new Error(`Z-API offline: ${data.error}`);
   }
 }
 
-// --- Handler do webhook ---
 module.exports = async function webhook(req, res) {
   console.log('🔥 Payload recebido:', JSON.stringify(req.body));
 
-  // 1) Só processa callbacks de mensagem recebida
-  if (
-    req.body.type !== 'ReceivedCallback' ||
-    req.body.fromApi === true ||
-    req.body.fromMe === true
-  ) {
+  // Filtra apenas mensagens de usuário
+  if (req.body.type !== 'ReceivedCallback' || req.body.fromApi || req.body.fromMe) {
     return res.sendStatus(200);
   }
 
-  // 2) Extrai o telefone do usuário: chatId ou phone
+  // Extrai telefone
   const rawPhone = req.body.chatId || req.body.phone || '';
-  const phone = rawPhone.split('@')[0];  // remove sufixo depois do '@'
-  if (!phone) {
-    console.warn('⚠️ Número não encontrado no payload:', req.body);
-    return res.sendStatus(400);
-  }
+  const phone = rawPhone.split('@')[0];
+  if (!phone) return res.status(400).json({ error: 'Número não encontrado' });
 
-  // 3) Extrai o texto da mensagem
-  const message =
-    req.body.text?.message ||
-    req.body.body ||
-    req.body.message ||
-    '';
-  if (!message) {
-    console.warn('⚠️ Texto não encontrado no payload:', req.body);
-    return res.sendStatus(400);
-  }
+  // Extrai mensagem
+  const message = req.body.text?.message || req.body.body || req.body.message || '';
+  if (!message) return res.status(400).json({ error: 'Mensagem vazia' });
 
   console.log(`📩 De ${phone}: "${message}"`);
 
   try {
-    // 4) Confirma instância ativa
     await checkInstance();
 
-    // 5) Gera resposta com IA
+    // Recupera contexto
+    const context = await retrieveContext(message);
+    console.log('📚 Contexto:', context);
+
+    // Prompt RAG
+    const prompt = `Você é o LuceBot, assistente do Colégio Luce. Use as informações abaixo para responder de forma profissional e institucional.\n---\n${context}\n---\nPergunta: ${message}`;
+
+    // Chama OpenAI
     const completion = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: `
-Você é o LuceBot, assistente do Colégio Luce. 
-Fale de forma profissional e institucional, respondendo dúvidas de:
-- Matrículas e valores
-- Calendário e horários
-- Localização e transporte
-- Projetos e eventos
-Encaminhe ao atendimento humano quando necessário.
-`
-        },
-        { role: 'user', content: message }
-      ],
+      messages: [ { role: 'system', content: prompt } ],
       max_tokens: 300
     });
     const responseText = completion.choices[0].message.content.trim();
     console.log('🤖 IA respondeu:', responseText);
 
-    // 6) Envia de volta pelo Z-API
+    // Envia via Z-API
     const sendUrl = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-text`;
-    const zapiResp = await axios.post(
+    await axios.post(
       sendUrl,
       { phone, message: responseText },
       { headers: { 'Content-Type': 'application/json', 'Client-Token': CLIENT_TOKEN } }
     );
-    console.log('✅ Z-API respondeu:', zapiResp.data);
+    console.log('✅ Z-API respondeu');
 
     return res.json({ success: true });
   } catch (err) {
     console.error('❌ Erro no webhook:', err.response?.data || err.message);
-    return res
-      .status(500)
-      .json({ error: 'Erro interno', details: err.response?.data || err.message });
+    return res.status(500).json({ error: 'Erro interno', details: err.response?.data || err.message });
   }
 };
