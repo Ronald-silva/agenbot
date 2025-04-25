@@ -1,18 +1,17 @@
 // controllers/webhook.js
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
-}
-const axios   = require('axios');
-const OpenAI  = require('openai');
+if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 
+const axios  = require('axios');
+const OpenAI = require('openai');
+
+// Vars de ambiente já validadas anteriormente...
 const INSTANCE_ID    = process.env.ZAPI_INSTANCE_ID.trim();
 const INSTANCE_TOKEN = process.env.ZAPI_INSTANCE_TOKEN.trim();
 const CLIENT_TOKEN   = process.env.ZAPI_CLIENT_TOKEN.trim();
-const OPENAI_KEY     = process.env.OPENAI_API_KEY;
+const OPENAI_KEY     = process.env.OPENAI_API_KEY.trim();
 
 const openai = new OpenAI({ apiKey: OPENAI_KEY });
 
-// Checa status da Z-API
 async function checkInstance() {
   const url = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/status`;
   const { data } = await axios.get(url, { headers: { 'Client-Token': CLIENT_TOKEN } });
@@ -22,61 +21,59 @@ async function checkInstance() {
 }
 
 module.exports = async function webhook(req, res) {
-  // 1) Capture payload
-  console.log('🔥 Payload:', req.body);
-  if (req.body.fromApi || req.body.event !== 'incoming-message') {
+  console.log('🔥 Payload recebido:', JSON.stringify(req.body));
+
+  // 1) Filtra apenas callbacks de recebimento de usuário
+  if (req.body.type !== 'ReceivedCallback' || req.body.fromApi === true) {
     return res.sendStatus(200);
   }
 
-  // 2) Normalize
-  const rawPhone = req.body.phone || req.body.chatId || '';
+  // 2) Normalize phone e message
+  const rawPhone = req.body.chatId || req.body.from || '';
   const phone    = rawPhone.replace(/@c\.us$/, '');
-  const message  = req.body.body || req.body.text?.message || req.body.message || '';
+  const message  = req.body.text?.message || req.body.body || '';
 
   if (!phone || !message) {
+    console.warn('⚠️ Payload inválido:', req.body);
     return res.status(400).json({ error: 'Dados incompletos', details: req.body });
   }
   console.log(`📩 De ${phone}: "${message}"`);
 
   try {
+    // 3) Confirma Z-API conectada
     await checkInstance();
 
-    // 3) Monta o prompt customizado para Colégio Luce
-    const completion = await openai.chat.completions.create({
+    // 4) Gera resposta com OpenAI
+    const completion  = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
       messages: [
         {
           role: 'system',
           content: `
-Você é o LuceBot, assistente oficial do Colégio Luce. 
-Fale sempre de forma clara, acolhedora, profissional e com tom institucional.
-Seja objetivo em respostas sobre:
- • Matrículas e bolsas  
- • Valores e formas de pagamento  
- • Turnos, horários e calendário letivo  
- • Localização, transporte e contato  
- • Projetos pedagógicos e eventos da escola  
-Nunca informe dados pessoais ou confidenciais; redirecione para contato humano quando necessário.`
+Você é o LuceBot, assistente do Colégio Luce. Fale de modo profissional, claro e institucional.
+Atenda dúvidas de matrícula, calendário, localização, projetos e redirecione para atendimento humano quando necessário.
+`
         },
         { role: 'user', content: message }
       ],
       max_tokens: 300
     });
     const responseText = completion.choices[0].message.content.trim();
-    console.log('🤖 LuceBot respondeu:', responseText);
+    console.log('🤖 Resposta IA:', responseText);
 
-    // 4) Envia via Z-API
+    // 5) Envia de volta via Z-API
     const sendUrl = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-text`;
-    await axios.post(
+    const zapiResp = await axios.post(
       sendUrl,
       { phone, message: responseText },
       { headers: { 'Client-Token': CLIENT_TOKEN } }
     );
-    console.log('✅ Enviado a', phone);
-    return res.json({ success: true });
+    console.log('✅ Z-API respondeu:', zapiResp.data);
 
+    return res.json({ success: true });
   } catch (err) {
-    console.error('❌ Erro no webhook:', err.message || err);
-    return res.status(500).json({ error: 'Erro interno', details: err.message });
+    console.error('❌ Erro no webhook:', err.response?.data || err.message);
+    const details = err.response?.data || err.message;
+    return res.status(500).json({ error: 'Erro interno', details });
   }
 };
