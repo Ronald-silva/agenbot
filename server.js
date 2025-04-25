@@ -1,9 +1,11 @@
-const express = require('express');
-const dotenv  = require('dotenv');
-const path    = require('path');
-const webhook = require('./controllers/webhook');
+// server.js
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
-dotenv.config();
+const express = require('express');
+const path = require('path');
+const webhook = require('./controllers/webhook');
 
 const app = express();
 app.use(express.json());

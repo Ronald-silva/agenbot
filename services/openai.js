@@ -1,4 +1,6 @@
-require('dotenv').config();
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 // Verifica se a chave está presente
 if (!process.env.OPENAI_API_KEY) {
