@@ -36,12 +36,13 @@ module.exports = async function webhook(req, res) {
     return res.sendStatus(200);
   }
 
-  // Normalize telefone: pode vir em chatId, connectedPhone ou phone
-  const rawPhone = req.body.chatId
-    || req.body.connectedPhone
-    || req.body.phone
-    || '';
-  const phone = rawPhone.replace(/@c\.us$/, '');
+   // Normalize telefone do usuário (só chatId ou from, sem connectedPhone)
+const rawPhone = req.body.chatId
+|| req.body.from
+|| '';
+// remove tudo a partir do “@” (c.us, l, etc)
+const phone = rawPhone.split('@')[0];
+
 
   // Normalize texto: texto pode vir em text.message ou body
   const message = req.body.text?.message
