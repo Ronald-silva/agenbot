@@ -1,5 +1,25 @@
 [
   {
+    "snippet": "Para lojistas, oferecemos preços especiais no atacado com descontos progressivos por quantidade.",
+    "embedding": []
+  },
+  {
+    "snippet": "Pedido mínimo para lojistas é de 10 unidades por modelo. Quanto maior a quantidade, maior o desconto.",
+    "embedding": []
+  },
+  {
+    "snippet": "Lojistas têm condições especiais de pagamento: parcelamento em até 6x sem juros ou 30/60/90 dias no boleto.",
+    "embedding": []
+  },
+  {
+    "snippet": "Fornecemos nota fiscal e garantia de 1 ano para todos os produtos vendidos no atacado.",
+    "embedding": []
+  },
+  {
+    "snippet": "Para revendedores, oferecemos suporte prioritário via WhatsApp e e-mail.",
+    "embedding": []
+  },
+  {
     "snippet": "A loja aceita PIX, Cartão de crédito/débito e Dinheiro como formas de pagamento.",
     "embedding": [
       -0.012941118329763412,
