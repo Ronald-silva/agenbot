@@ -101,33 +101,81 @@ module.exports = async function webhook(req, res) {
     
     // Recupera ou inicializa o estado do cliente
     const clientState = getClientState(phone);
-    console.log('🔑 Estado do cliente:', clientState);
+    console.log('🔑 Estado inicial do cliente:', clientState);
+
+    // Se o cliente está respondendo com o nome após perguntarmos
+    if (clientState.lastQuestion === 'name' && !clientState.name) {
+      // Tenta extrair o nome da mensagem
+      const nameMatch = message.match(/(?:me\s+chamo|sou|meu\s+nome\s+[ée])\s+([^.,!?]+)/i);
+      if (nameMatch) {
+        clientState.name = nameMatch[1].trim();
+      } else {
+        // Se não encontrou padrão específico, usa a mensagem toda como nome
+        clientState.name = message.trim();
+      }
+      console.log('✅ Nome do cliente identificado:', clientState.name);
+      // Após identificar o nome, a próxima pergunta será sobre o tipo
+      clientState.lastQuestion = 'type';
+      setClientState(phone, clientState);
+      console.log('💾 Estado atualizado após identificar nome:', getClientState(phone));
+    }
 
     // Se o tipo de cliente ainda não foi identificado, vamos tentar identificar
-    if (!clientState.type && !message.toLowerCase().includes('oi') && !message.toLowerCase().includes('olá')) {
+    if (!clientState.type) {
       const lowerMsg = message.toLowerCase();
+      
+      // Primeira tentativa: resposta direta sobre tipo
       if (lowerMsg.includes('lojista') || lowerMsg.includes('revenda') || lowerMsg.includes('atacado')) {
         clientState.type = 'lojista';
+        console.log('✅ Cliente identificado como lojista');
         setClientState(phone, clientState);
-      } else if (lowerMsg.includes('cliente') || lowerMsg.includes('comprar') || lowerMsg.includes('particular')) {
+      } else if (lowerMsg.includes('cliente') || lowerMsg.includes('comprar') || lowerMsg.includes('particular') || 
+                 lowerMsg.includes('para mim') || lowerMsg.includes('uso pessoal') || lowerMsg.includes('mim mesmo') ||
+                 lowerMsg.includes('compro para mim')) {
         clientState.type = 'cliente';
+        console.log('✅ Cliente identificado como cliente final');
         setClientState(phone, clientState);
+      } else if (clientState.lastQuestion === 'type' && 
+                (lowerMsg === 'sim' || lowerMsg.includes('isso') || lowerMsg.includes('exato'))) {
+        // Cliente respondeu "sim" para a pergunta se está comprando para si
+        clientState.type = 'cliente';
+        console.log('✅ Cliente identificado como cliente final (respondeu sim)');
+        setClientState(phone, clientState);
+      }
+
+      if (clientState.type) {
+        console.log('💾 Estado atualizado após identificar tipo:', getClientState(phone));
       }
     }
 
+    // Verifica se o estado foi salvo corretamente
+    const stateCheck = getClientState(phone);
+    console.log('🔍 Verificação do estado antes do prompt:', stateCheck);
+
+    // Recupera contexto do JSON em memória
     const context = await retrieveContext(message);
     console.log('📚 Contexto:', context);
-      let basePrompt;
-    const firstMessage = !clientState.type && (message.toLowerCase().includes('oi') || message.toLowerCase().includes('olá'));
+      
+    // Verifica se é primeira mensagem com mais variações de saudação
+    const saudacoes = ['oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite'];
+    const lowerMsg = message.toLowerCase();
+    const firstMessage = !clientState.type && saudacoes.some(s => lowerMsg.includes(s));
 
-    if (firstMessage) {
+    let basePrompt;    if (firstMessage) {
       basePrompt = `Você é o FelipeBot, atendente virtual da loja Felipe Relógios, especializada em relógios com ótimo custo-benefício.
 
-Inicie com uma saudação acolhedora e pergunte o nome do cliente de forma gentil, como:
+IMPORTANTE: Use EXATAMENTE esta mensagem de boas-vindas, não faça adaptações:
 "Olá! Que bom te ver por aqui 😊 Posso te ajudar com algo? Ah, posso saber seu nome pra te atender melhor?"
 
-Em seguida, após o cliente responder, use o nome com naturalidade e descubra se é lojista ou consumidor final com uma pergunta leve:
-"Pra te atender melhor, você está comprando para você ou é lojista/revendedor?"`;
+Regras:
+- Use apenas esta mensagem inicial, sem alterações
+- Não faça perguntas adicionais ainda
+- Espere o cliente informar o nome primeiro`;
+
+      // Marca que a próxima resposta esperada é o nome
+      clientState.lastQuestion = 'name';
+      setClientState(phone, clientState);
+
     } else if (clientState.type) {
       basePrompt = `Você é o FelipeBot, atendente virtual da loja Felipe Relógios. 
 Você está atendendo um ${clientState.type === 'lojista' ? 'lojista/revendedor' : 'cliente final'}.
@@ -153,7 +201,7 @@ Use gatilhos como:
 - "Visual bem imponente"
 - "Custo-benefício top"`}
 
-Use o nome do cliente apenas em momentos estratégicos:
+Use o nome do cliente apenas em momentos estratégicas:
 - Ao mudar de assunto
 - Ao fazer uma nova pergunta importante
 - Evite repetir o nome em cada resposta
@@ -167,6 +215,10 @@ Pergunte educadamente se a pessoa é lojista/revendedor ou cliente final:
 "Pra te atender melhor, você está comprando para você ou é lojista/revendedor?"
 
 Use linguagem natural e evite repetições.`;
+
+      // Marca que a próxima resposta esperada é o tipo
+      clientState.lastQuestion = 'type';
+      setClientState(phone, clientState);
     }
 
     const prompt = `${basePrompt}
