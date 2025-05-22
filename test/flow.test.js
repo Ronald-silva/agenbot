@@ -13,21 +13,26 @@ describe('Fluxo de chat', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockReq = (message) => ({
-      body: {
+    mockReq = (message, useChatLid = false) => {
+      const basePayload = {
         type: 'ReceivedCallback',
-        chatId: '85991575525@c.us',
         text: { message },
         fromMe: false,
-        fromApi: false
+        fromApi: false,
+        phone: '85991575525'
+      };
+      if (useChatLid) {
+        basePayload.chatLid = '216183051673677@lid';
+      } else {
+        basePayload.chatId = '85991575525@c.us';
       }
-    });
+      return { body: basePayload };
+    };
     mockRes = {
       json: jest.fn(),
       status: jest.fn().mockReturnThis()
     };
     axios.post.mockResolvedValue({ success: true });
-    // Limpa o estado antes de cada teste
     const state = getClientState('85991575525');
     state.lastQuestion = null;
     state.name = null;
@@ -77,19 +82,26 @@ describe('Fluxo de chat', () => {
   }, 10000);
 
   it('deve rejeitar nomes muito curtos', async () => {
-    // 1. Cliente: "oi"
     chat.mockResolvedValueOnce('Olá! Bem-vindo(a) à Felipe Relógios! 😊 Como posso te ajudar hoje? Posso saber seu nome, por favor?');
     await webhook(mockReq('oi'), mockRes);
     let state = getClientState('85991575525');
     expect(state.lastQuestion).toBe('askName');
     expect(state.name).toBe(null);
 
-    // 2. Cliente informa nome curto
     chat.mockResolvedValueOnce('Desculpe, o nome parece muito curto. Pode me dizer seu nome completo, por favor?');
     await webhook(mockReq('A'), mockRes);
     state = getClientState('85991575525');
     expect(state.lastQuestion).toBe('askName');
     expect(state.name).toBe(null);
+    expect(mockRes.json).toHaveBeenCalledWith({ success: true });
+  }, 10000);
+
+  it('deve processar mensagens com chatLid (formato Z-API)', async () => {
+    chat.mockResolvedValueOnce('Olá! Bem-vindo(a) à Felipe Relógios! 😊 Como posso te ajudar hoje? Posso saber seu nome, por favor?');
+    await webhook(mockReq('bom dia', true), mockRes);
+    let state = getClientState('85991575525');
+    expect(state.lastQuestion).toBe('askName');
+    expect(state.metadata.interactions).toBe(1);
     expect(mockRes.json).toHaveBeenCalledWith({ success: true });
   }, 10000);
 });

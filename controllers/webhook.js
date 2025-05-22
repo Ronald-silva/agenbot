@@ -149,23 +149,26 @@ const webhook = async (req, res) => {
   try {
     console.log('🔥 Webhook recebido:', JSON.stringify(req.body));
 
-    const { chatId, text, fromMe, fromApi } = req.body;
+    const { chatId, chatLid, text, fromMe, fromApi, phone } = req.body;
     if (fromMe || fromApi) {
       console.log('📥 Mensagem ignorada: fromMe ou fromApi');
       return res.json({ success: true });
     }
 
-    if (!chatId || !text || !text.message) {
+    // Suporta tanto chatId quanto chatLid
+    const effectiveChatId = chatId || chatLid;
+    if (!effectiveChatId || !text || !text.message) {
       console.log('❌ Dados inválidos no payload');
       return res.status(400).json({ error: 'Dados inválidos' });
     }
 
-    const phone = chatId.split('@')[0];
+    // Usa o phone do payload se disponível, caso contrário extrai de chatId/chatLid
+    const senderPhone = phone || effectiveChatId.split('@')[0];
     const message = text.message.trim().toLowerCase();
-    let state = getClientState(phone);
+    let state = getClientState(senderPhone);
     let response = '';
 
-    console.log(`📊 Estado inicial do cliente ${phone}:`, JSON.stringify(state));
+    console.log(`📊 Estado inicial do cliente ${senderPhone}:`, JSON.stringify(state));
 
     const storeStatus = isStoreOpen() ? "🟢 *Loja Aberta*" : "🔴 *Loja Fechada* (Atendimento online disponível)";
     let responsePrefix = `${storeStatus}\n\n`;
@@ -182,11 +185,11 @@ const webhook = async (req, res) => {
         } else {
           state.name = name;
           console.log(`📋 Nome do cliente definido: ${state.name}`);
-          response = await chat(`O cliente acabou de informar que se chama "${state.name}". Por favor, dê boas vindas e pergunte se é um cliente final ou lojista/revendedor de uma forma amigável e profissional.`, phone);
+          response = await chat(`O cliente acabou de informar que se chama "${state.name}". Por favor, dê boas vindas e pergunte se é um cliente final ou lojista/revendedor de uma forma amigável e profissional.`, senderPhone);
           state.lastQuestion = 'askType';
         }
       } else {
-        response = await chat("Por favor, dê boas vindas a um novo cliente e peça seu nome de forma amigável e profissional.", phone);
+        response = await chat("Por favor, dê boas vindas a um novo cliente e peça seu nome de forma amigável e profissional.", senderPhone);
         state.lastQuestion = 'askName';
       }
     } else if (!state.type) {
@@ -195,16 +198,16 @@ const webhook = async (req, res) => {
         if (typeResponse.includes('lojista') || typeResponse.includes('revendedor')) {
           state.type = 'lojista';
           console.log(`📋 Tipo do cliente definido: lojista`);
-          response = await chat(`O cliente ${state.name} é um lojista/revendedor. Por favor, explique nossas condições especiais de atacado de forma clara e profissional, incluindo descontos progressivos, pedido mínimo e formas de pagamento diferenciadas.`, phone);
+          response = await chat(`O cliente ${state.name} é um lojista/revendedor. Por favor, explique nossas condições especiais de atacado de forma clara e profissional, incluindo descontos progressivos, pedido mínimo e formas de pagamento diferenciadas.`, senderPhone);
           state.lastQuestion = null;
         } else {
           state.type = 'cliente';
           console.log(`📋 Tipo do cliente definido: cliente`);
-          response = await chat(`O cliente ${state.name} é um cliente final para uso pessoal. Pergunte sobre qual estilo de relógio ele procura (clássico, esportivo ou casual) ou recomende algo com base nas preferências.`, phone);
+          response = await chat(`O cliente ${state.name} é um cliente final para uso pessoal. Pergunte sobre qual estilo de relógio ele procura (clássico, esportivo ou casual) ou recomende algo com base nas preferências.`, senderPhone);
           state.lastQuestion = null;
         }
       } else {
-        response = await chat(`O cliente ${state.name} ainda não informou se é cliente final ou lojista/revendedor. Pergunte novamente de forma amigável e profissional.`, phone);
+        response = await chat(`O cliente ${state.name} ainda não informou se é cliente final ou lojista/revendedor. Pergunte novamente de forma amigável e profissional.`, senderPhone);
         state.lastQuestion = 'askType';
       }
     } else {
@@ -247,7 +250,7 @@ const webhook = async (req, res) => {
           }
         } else {
           console.log(`📞 Enviando mensagem "${message}" para OpenAI`);
-          response = await chat(message, phone);
+          response = await chat(message, senderPhone);
           console.log(`📢 Resposta da OpenAI: ${response}`);
         }
       }
@@ -256,10 +259,10 @@ const webhook = async (req, res) => {
     response = responsePrefix + response;
     console.log(`📢 Resposta final gerada: ${response}`);
 
-    setClientState(phone, state);
-    console.log(`📊 Estado final do cliente ${phone}:`, JSON.stringify(state));
+    setClientState(senderPhone, state);
+    console.log(`📊 Estado final do cliente ${senderPhone}:`, JSON.stringify(state));
 
-    await sendMessage(phone, response);
+    await sendMessage(senderPhone, response);
     console.log(`✅ Processamento completo em ${Date.now() - startTime}ms`);
     res.json({ success: true });
   } catch (err) {

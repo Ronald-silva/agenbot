@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const STATES_FILE = path.join(__dirname, '..', 'data', 'states.json');
+const STATES_FILE = process.env.RAILWAY_ENVIRONMENT
+  ? '/app/data/states.json'
+  : path.join(__dirname, '..', 'data', 'states.json');
 
-// Carrega estados do arquivo ou inicializa vazio
 let clientStates = {};
 if (fs.existsSync(STATES_FILE)) {
   try {
@@ -15,7 +16,6 @@ if (fs.existsSync(STATES_FILE)) {
   }
 }
 
-// Função para salvar estados no arquivo
 function saveStates() {
   try {
     fs.writeFileSync(STATES_FILE, JSON.stringify(clientStates, null, 2), 'utf8');
@@ -25,7 +25,6 @@ function saveStates() {
   }
 }
 
-// Função para obter o estado de um cliente
 function getClientState(phone) {
   if (!clientStates[phone]) {
     clientStates[phone] = {
@@ -43,7 +42,6 @@ function getClientState(phone) {
   return clientStates[phone];
 }
 
-// Função para atualizar o estado de um cliente
 function setClientState(phone, state) {
   clientStates[phone] = state;
   saveStates();
