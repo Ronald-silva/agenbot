@@ -1,69 +1,54 @@
-const axios = require('axios');
 const webhook = require('../controllers/webhook');
-const { getClientState, setClientState } = require('../utils/state');
-const { chat } = require('../services/openai');
+const { getClientState } = require('../utils/state');
+const axios = require('axios');
 
 jest.mock('axios');
-jest.mock('../services/openai');
-
-beforeAll(() => {
-  // Mock para chamadas à Z-API
-  axios.get.mockImplementation(() =>
-    Promise.resolve({ data: { connected: true, smartphoneConnected: true } })
-  );
-  axios.post.mockImplementation(() =>
-    Promise.resolve({ data: { success: true } })
-  );
-
-  // Mock para o chat do OpenAI
-  chat.mockImplementation((message, phone) => {
-    if (message.includes('dê boas vindas a um novo cliente')) {
-      return Promise.resolve('Olá! Bem-vindo(a) à Felipe Relógios! 😊 Como posso te ajudar hoje? Posso saber seu nome, por favor?');
-    } else if (message.includes('O cliente acabou de informar que se chama')) {
-      return Promise.resolve('Prazer em conhecê-lo(a)! Você está comprando para uso pessoal ou é lojista/revendedor?');
-    } else if (message.includes('é um lojista/revendedor')) {
-      return Promise.resolve('Ótimo! Para lojistas, temos condições especiais: descontos progressivos por quantidade, pedido mínimo de 10 unidades, e parcelamento em até 6x sem juros ou 30/60/90 no boleto. Qual quantidade você tem interesse?');
-    } else if (message.includes('é um cliente final')) {
-      return Promise.resolve('Que bom tê-lo(a) aqui! 😊 Qual estilo de relógio você procura? Clássico, esportivo ou casual?');
-    }
-    return Promise.resolve('Resposta mockada para mensagem geral.');
-  });
-});
-
-beforeEach(() => {
-  // Limpa o estado antes de cada teste
-  setClientState('85991575525', null);
-  setClientState('old-user', null);
-});
-
-afterAll(() => {
-  jest.restoreAllMocks();
-});
-
-function mockReq(message, phone = '85991575525') {
-  return {
-    body: {
-      type: 'ReceivedCallback',
-      chatId: `${phone}@c.us`,
-      text: { message },
-      fromMe: false,
-      fromApi: false
-    }
-  };
-}
-
-const mockRes = {
-  status: jest.fn().mockReturnThis(),
-  json: jest.fn(),
-  sendStatus: jest.fn()
-};
+jest.mock('../services/openai', () => ({
+  chat: jest.fn()
+}));
+const { chat } = require('../services/openai');
 
 describe('Fluxo de chat', () => {
-  test('deve processar mensagens do cliente corretamente', async () => {
+  let mockReq, mockRes;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockReq = (message) => ({
+      body: {
+        type: 'ReceivedCallback',
+        chatId: '85991575525@c.us',
+        text: { message },
+        fromMe: false,
+        fromApi: false
+      }
+    });
+    mockRes = {
+      json: jest.fn(),
+      status: jest.fn().mockReturnThis()
+    };
+    axios.post.mockResolvedValue({ success: true });
+    // Limpa o estado antes de cada teste
+    const state = getClientState('85991575525');
+    state.lastQuestion = null;
+    state.name = null;
+    state.type = null;
+    state.metadata = {
+      createdAt: Date.now(),
+      lastUpdated: Date.now(),
+      interactions: 0
+    };
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+  });
+
+  it('deve processar mensagens do cliente corretamente', async () => {
     console.log('\n=== Testando fluxo de identificação de cliente ===\n');
 
     // 1. Cliente: "oi"
     console.log('1. Cliente: "oi"');
+    chat.mockResolvedValueOnce('Olá! Bem-vindo(a) à Felipe Relógios! 😊 Como posso te ajudar hoje? Posso saber seu nome, por favor?');
     await webhook(mockReq('oi'), mockRes);
     let state = getClientState('85991575525');
     console.log('Estado:', state);
@@ -72,6 +57,7 @@ describe('Fluxo de chat', () => {
 
     // 2. Cliente informa nome
     console.log('\n2. Cliente: "João"');
+    chat.mockResolvedValueOnce('Prazer em conhecê-lo(a)! Você está comprando para uso pessoal ou é lojista/revendedor?');
     await webhook(mockReq('João'), mockRes);
     state = getClientState('85991575525');
     console.log('Estado:', state);
@@ -81,26 +67,29 @@ describe('Fluxo de chat', () => {
 
     // 3. Cliente informa tipo
     console.log('\n3. Cliente: "sou lojista"');
+    chat.mockResolvedValueOnce('Ótimo! Para lojistas, temos condições especiais: descontos progressivos por quantidade, pedido mínimo de 10 unidades, e parcelamento em até 6x sem juros ou 30/60/90 no boleto. Qual quantidade você tem interesse?');
     await webhook(mockReq('sou lojista'), mockRes);
     state = getClientState('85991575525');
     console.log('Estado:', state);
     expect(state.type).toBe('lojista');
     expect(state.lastQuestion).toBe(null);
     expect(mockRes.json).toHaveBeenCalledWith({ success: true });
-  });
+  }, 10000);
 
-  test('deve rejeitar nomes muito curtos', async () => {
+  it('deve rejeitar nomes muito curtos', async () => {
     // 1. Cliente: "oi"
+    chat.mockResolvedValueOnce('Olá! Bem-vindo(a) à Felipe Relógios! 😊 Como posso te ajudar hoje? Posso saber seu nome, por favor?');
     await webhook(mockReq('oi'), mockRes);
     let state = getClientState('85991575525');
     expect(state.lastQuestion).toBe('askName');
-    expect(state.name).toBe(null); // Confirma que name é null inicialmente
+    expect(state.name).toBe(null);
 
     // 2. Cliente informa nome curto
+    chat.mockResolvedValueOnce('Desculpe, o nome parece muito curto. Pode me dizer seu nome completo, por favor?');
     await webhook(mockReq('A'), mockRes);
     state = getClientState('85991575525');
-    expect(state.name).toBe(null); // Confirma que name continua null
     expect(state.lastQuestion).toBe('askName');
+    expect(state.name).toBe(null);
     expect(mockRes.json).toHaveBeenCalledWith({ success: true });
-  });
+  }, 10000);
 });

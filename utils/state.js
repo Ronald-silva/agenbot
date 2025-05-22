@@ -1,28 +1,55 @@
-let clients = {};
+const fs = require('fs');
+const path = require('path');
 
-// Função para recuperar o estado do cliente
+const STATES_FILE = path.join(__dirname, '..', 'data', 'states.json');
+
+// Carrega estados do arquivo ou inicializa vazio
+let clientStates = {};
+if (fs.existsSync(STATES_FILE)) {
+  try {
+    const data = fs.readFileSync(STATES_FILE, 'utf8');
+    clientStates = JSON.parse(data);
+  } catch (error) {
+    console.error('❌ Erro ao carregar states.json:', error.message);
+    clientStates = {};
+  }
+}
+
+// Função para salvar estados no arquivo
+function saveStates() {
+  try {
+    fs.writeFileSync(STATES_FILE, JSON.stringify(clientStates, null, 2), 'utf8');
+    console.log('💾 Estados salvos em states.json');
+  } catch (error) {
+    console.error('❌ Erro ao salvar states.json:', error.message);
+  }
+}
+
+// Função para obter o estado de um cliente
 function getClientState(phone) {
-  if (!clients[phone]) {
-    clients[phone] = {
+  if (!clientStates[phone]) {
+    clientStates[phone] = {
       lastQuestion: null,
       name: null,
       type: null,
-      metadata: { interactions: 0, createdAt: Date.now(), lastUpdated: Date.now() }
+      metadata: {
+        createdAt: Date.now(),
+        lastUpdated: Date.now(),
+        interactions: 0
+      }
     };
+    saveStates();
   }
-  return clients[phone];
+  return clientStates[phone];
 }
 
-// Função para salvar o estado do cliente
+// Função para atualizar o estado de um cliente
 function setClientState(phone, state) {
-  // Se state for null ou undefined, remove o estado do cliente (limpa)
-  if (state === null || state === undefined) {
-    delete clients[phone];
-    return;
-  }
-  // Garante que os metadados existam
-  state.metadata = state.metadata || { interactions: 0, createdAt: Date.now(), lastUpdated: Date.now() };
-  clients[phone] = state;
+  clientStates[phone] = state;
+  saveStates();
 }
 
-module.exports = { getClientState, setClientState };
+module.exports = {
+  getClientState,
+  setClientState
+};
