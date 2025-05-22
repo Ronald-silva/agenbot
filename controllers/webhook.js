@@ -1,51 +1,69 @@
-// controllers/webhook.js
-// Webhook para atendimento via Z-API e OpenAI (GPT-4o) com estado por cliente
-
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
-}
-
 const axios = require('axios');
-const { chat } = require('../services/openai'); // usa openai.js refatorado
+const { chat } = require('../services/openai');
 const { getClientState, setClientState } = require('../utils/state');
-const { getStoreInfo, getAllProducts, getProductsByCategory, formatProductInfo } = require('../utils/catalog');
+const { getStoreInfo, getAllProducts, getProductById, getProductsByCategory, formatProductInfo, formatPrice } = require('../utils/catalog');
 
-// Variáveis de ambiente
-const INSTANCE_ID    = process.env.ZAPI_INSTANCE_ID?.trim();
-const INSTANCE_TOKEN = process.env.ZAPI_INSTANCE_TOKEN?.trim();
-const CLIENT_TOKEN   = process.env.ZAPI_CLIENT_TOKEN?.trim();
+const ZAPI_URL = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE_ID}/token/${process.env.ZAPI_INSTANCE_TOKEN}`;
+const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN;
 
-if (!INSTANCE_ID || !INSTANCE_TOKEN || !CLIENT_TOKEN) {
-  console.error('❌ Defina ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN e ZAPI_CLIENT_TOKEN no .env');
-  process.exit(1);
+// Verifica se a loja está aberta (segunda a sábado, 9h às 17h)
+function isStoreOpen() {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0 = Domingo, 1 = Segunda, ..., 6 = Sábado
+  const hour = now.getHours();
+  const minutes = now.getMinutes();
+  const timeInMinutes = hour * 60 + minutes;
+
+  const isOpenDay = dayOfWeek >= 1 && dayOfWeek <= 6;
+  const isOpenHour = timeInMinutes >= 9 * 60 && timeInMinutes < 17 * 60;
+
+  return isOpenDay && isOpenHour;
 }
 
-// Checa status da instância Z-API
-async function checkInstance() {
-  const url = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/status`;
-  const { data } = await axios.get(url, { headers: { 'Client-Token': CLIENT_TOKEN } });
-  if (!data.connected || !data.smartphoneConnected) {
-    throw new Error(`Z-API offline: ${data.error || 'sem conexão'}`);
+// Função para enviar mensagem via Z-API
+async function sendMessage(phone, message) {
+  try {
+    const response = await axios.post(
+      `${ZAPI_URL}/send-text`,
+      {
+        phone: phone.replace(/\D/g, ''),
+        message: message
+      },
+      {
+        headers: {
+          'Client-Token': ZAPI_CLIENT_TOKEN,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    console.log(`✅ Resposta enviada: ${message}`);
+    return response.data;
+  } catch (error) {
+    console.error('❌ Erro ao enviar mensagem via Z-API:', error.message || error);
+    throw error;
   }
 }
 
-// Formata lista de produtos para exibição
+// Função para formatar lista de produtos
 function formatProductList(products) {
-  let message = "🕐 *Catálogo de Produtos*\n\n";
-  products.forEach((product, index) => {
-    message += `${index + 1}. ${product.name} - ${formatPrice(product.price)}\n`;
-  });
-  message += "\nPara ver detalhes de um produto, envie o número correspondente.";
-  return message;
+  if (!products || products.length === 0) {
+    return "Nenhum produto encontrado nesta categoria.";
+  }
+
+  return products.map((product, index) => {
+    return `${index + 1}. ${formatProductInfo(product)}\n`;
+  }).join('\n');
 }
 
-// Manipula catálogo de produtos com base no estado do usuário
+// Função para lidar com o catálogo de produtos
 function handleProductCatalog(userMessage, currentState) {
   const stateMapping = {
     'VIEW_ALL_PRODUCTS': getAllProducts(),
     'VIEW_CLASSIC_PRODUCTS': getProductsByCategory('Clássico'),
     'VIEW_SPORT_PRODUCTS': getProductsByCategory('Esportivo'),
-    'VIEW_CASUAL_PRODUCTS': getProductsByCategory('Casual')
+    'VIEW_CASUAL_PRODUCTS': getProductsByCategory('Casual'),
+    'VIEW_DIGITAL_PRODUCTS': getProductsByCategory('Digital'),
+    'VIEW_FEMALE_PRODUCTS': getProductsByCategory('Feminino')
   };
 
   const products = stateMapping[currentState];
@@ -54,11 +72,11 @@ function handleProductCatalog(userMessage, currentState) {
   return formatProductList(products);
 }
 
-// Manipula informações da loja
+// Função para lidar com informações da loja
 function handleStoreInfo() {
   const storeInfo = getStoreInfo();
   let message = "ℹ️ *Informações da Loja*\n\n";
-  
+
   message += `🕐 *Horário de Funcionamento*\n`;
   message += `${storeInfo.hours.weekdays}\n`;
   message += `${storeInfo.hours.weekends}\n`;
@@ -76,73 +94,121 @@ function handleStoreInfo() {
     message += `• ${policy}\n`;
   });
 
+  message += `\n📌 *Observações*\n`;
+  storeInfo.observations.forEach(observation => {
+    message += `• ${observation}\n`;
+  });
+
   return message;
 }
 
 // Função principal do webhook
-module.exports = async function webhook(req, res) {
+const webhook = async (req, res) => {
   try {
-    const body = req.body;
-    console.log('🔥 Payload recebido:', JSON.stringify(body));
+    console.log('🔥 Payload recebido:', JSON.stringify(req.body));
 
-    // Ignora mensagens que não sejam de usuário
-    if (body.type !== 'ReceivedCallback' || body.fromApi || body.fromMe) {
-      return res.sendStatus(200);
+    const { chatId, text, fromMe, fromApi } = req.body;
+    if (fromMe || fromApi) {
+      return res.json({ success: true });
     }
 
-    const rawPhone = body.chatId || body.phone || '';
-    const phone = rawPhone.split('@')[0];
-    if (!phone) return res.status(400).json({ error: 'Número não encontrado' });
+    if (!chatId || !text || !text.message) {
+      return res.status(400).json({ error: 'Dados inválidos' });
+    }
 
-    const message = body.text?.message || body.body || '';
-    if (!message) return res.status(400).json({ error: 'Mensagem vazia' });
+    const phone = chatId.split('@')[0];
+    const message = text.message.trim().toLowerCase();
+    let state = getClientState(phone);
+    let response = '';
 
-    await checkInstance();    // Carrega estado do cliente
-    const state = getClientState(phone) || { lastQuestion: null, name: null, type: null };
+    // Verifica se a loja está aberta
+    const storeStatus = isStoreOpen() ? "🟢 *Loja Aberta*" : "🔴 *Loja Fechada* (Atendimento online disponível)";
+    let responsePrefix = `${storeStatus}\n\n`;
 
-    // Define prompt base e atualiza estado se for pergunta de nome/tipo
-    let response;
+    // Incrementa interações
+    state.metadata.interactions += 1;
+    state.metadata.lastUpdated = Date.now();
+
+    // Fluxo de identificação
     if (!state.name) {
-      // Pergunta inicial de nome
       if (state.lastQuestion === 'askName') {
-        state.name = message.trim();
-        response = await chat(`O cliente acabou de informar que se chama "${state.name}". Por favor, dê boas vindas e pergunte se é um cliente final ou lojista/revendedor de uma forma amigável e profissional.`, phone);
-        state.lastQuestion = 'askType';
+        const name = text.message.trim();
+        if (name.length < 2) {
+          response = "Desculpe, o nome parece muito curto. Pode me dizer seu nome completo, por favor?";
+          state.lastQuestion = 'askName';
+        } else {
+          state.name = name;
+          response = await chat(`O cliente acabou de informar que se chama "${state.name}". Por favor, dê boas vindas e pergunte se é um cliente final ou lojista/revendedor de uma forma amigável e profissional.`, phone);
+          state.lastQuestion = 'askType';
+        }
       } else {
         response = await chat("Por favor, dê boas vindas a um novo cliente e peça seu nome de forma amigável e profissional.", phone);
         state.lastQuestion = 'askName';
       }
     } else if (!state.type) {
-      // Pergunta de tipo de cliente
-      const lower = message.toLowerCase();
-      if (/lojista|revenda|atacado/.test(lower)) {
-        state.type = 'lojista';
-        response = await chat(`O cliente ${state.name} é um lojista/revendedor. Por favor, explique nossas condições especiais de atacado, descontos progressivos e parcelamento, e pergunte sobre a quantidade de interesse.`, phone);
+      if (state.lastQuestion === 'askType') {
+        const typeResponse = message;
+        if (typeResponse.includes('lojista') || typeResponse.includes('revendedor')) {
+          state.type = 'lojista';
+          response = await chat(`O cliente ${state.name} é um lojista/revendedor. Por favor, explique nossas condições especiais de atacado de forma clara e profissional, incluindo descontos progressivos, pedido mínimo e formas de pagamento diferenciadas.`, phone);
+          state.lastQuestion = null;
+        } else {
+          state.type = 'cliente';
+          response = await chat(`O cliente ${state.name} é um cliente final para uso pessoal. Pergunte sobre qual estilo de relógio ele procura (clássico, esportivo ou casual) ou recomende algo com base nas preferências.`, phone);
+          state.lastQuestion = null;
+        }
       } else {
-        state.type = 'cliente';
-        response = await chat(`O cliente ${state.name} é um cliente final para uso pessoal. Por favor, dê boas vindas e pergunte sobre qual estilo de relógio ele procura (clássico, esportivo ou casual).`, phone);
+        response = await chat(`O cliente ${state.name} ainda não informou se é cliente final ou lojista/revendedor. Pergunte novamente de forma amigável e profissional.`, phone);
+        state.lastQuestion = 'askType';
       }
-      state.lastQuestion = null;
     } else {
-      // Fluxo geral: use OpenAI para resposta natural com contexto completo
-      setClientState(phone, state);
-      response = await chat(message, phone);
+      // Fluxo de navegação pelo catálogo ou informações
+      const catalogResponse = handleProductCatalog(message, state.currentState);
+      if (catalogResponse) {
+        response = catalogResponse;
+      } else if (state.currentState === 'STORE_INFO_STATE') {
+        response = handleStoreInfo();
+      } else if (message.includes('reservar')) {
+        let product = null;
+        const matchByNumber = message.match(/reservar\s+(\d+)/i);
+        const matchById = message.match(/reservar\s+([a-z0-9-]+)/i);
+
+        if (matchByNumber) {
+          const productIndex = parseInt(matchByNumber[1]) - 1;
+          const products = getAllProducts();
+          if (productIndex >= 0 && productIndex < products.length) {
+            product = products[productIndex];
+          }
+        } else if (matchById) {
+          const productId = matchById[1];
+          product = getProductById(productId);
+        }
+
+        if (product) {
+          const reservationTime = new Date().toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' });
+          response = `✅ *Reserva Confirmada!*\n\nVocê reservou o *${product.name}* por ${formatPrice(product.price)}.\n*Data/Hora da Reserva*: ${reservationTime}\nO produto estará separado por 24h na loja Felipe Relógios (Avenida Imperador, 546 Box-12 - Centro).\n\nPara retirada, aceitamos PIX, cartões ou dinheiro. Se preferir entrega, você pode contratar um serviço de transporte (moto, Uber, etc.), sendo o custo por sua conta.\n\nQualquer dúvida, estamos à disposição! 😊`;
+          state.lastReservation = product.id;
+        } else {
+          response = "❌ Desculpe, não encontrei o produto. Use o número do produto (ex.: 'reservar 1') ou o ID (ex.: 'reservar atlantis-masculino'). Para ver os produtos disponíveis, envie 'catálogo'.";
+        }
+      } else {
+        response = await chat(message, phone);
+      }
     }
 
-    // Salva estado atualizado
+    // Adiciona o status da loja à resposta
+    response = responsePrefix + response;
+
+    // Salva o estado
     setClientState(phone, state);
 
-    // Envia resposta via Z-API
-    const sendUrl = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-text`;
-    await axios.post(sendUrl,
-      { phone, message: response },
-      { headers: { 'Content-Type': 'application/json', 'Client-Token': CLIENT_TOKEN } }
-    );
-
-    console.log('✅ Resposta enviada:', response);
+    // Envia a resposta ao cliente
+    await sendMessage(phone, response);
     res.json({ success: true });
   } catch (err) {
     console.error('❌ Erro no webhook:', err.message || err);
     res.status(500).json({ error: 'Erro interno', details: err.message || err });
   }
 };
+
+module.exports = webhook;
