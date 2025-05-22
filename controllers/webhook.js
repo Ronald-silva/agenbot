@@ -6,16 +6,17 @@ const { getStoreInfo, getAllProducts, getProductById, getProductsByCategory, for
 const ZAPI_URL = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE_ID}/token/${process.env.ZAPI_INSTANCE_TOKEN}`;
 const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN;
 
-// Verifica se a loja está aberta (segunda a sábado, 9h às 17h)
+// Verifica se a loja está aberta (segunda a sábado, 9h às 17h, fuso de Fortaleza)
 function isStoreOpen() {
   const now = new Date();
-  const dayOfWeek = now.getDay();
-  const hour = now.getHours();
-  const minutes = now.getMinutes();
+  const options = { timeZone: 'America/Fortaleza' };
+  const dayOfWeek = now.getDay(options);
+  const hour = now.getHours(options);
+  const minutes = now.getMinutes(options);
   const timeInMinutes = hour * 60 + minutes;
 
-  const isOpenDay = dayOfWeek >= 1 && dayOfWeek <= 6;
-  const isOpenHour = timeInMinutes >= 9 * 60 && timeInMinutes < 17 * 60;
+  const isOpenDay = dayOfWeek >= 1 && dayOfWeek <= 6; // Segunda a sábado
+  const isOpenHour = timeInMinutes >= 9 * 60 && timeInMinutes < 17 * 60; // 9h às 17h
 
   return isOpenDay && isOpenHour;
 }
@@ -116,11 +117,7 @@ function handleGreeting(message, state) {
   const lowerMessage = message.toLowerCase();
   const isGreeting = greetings.some(greeting => lowerMessage.includes(greeting));
 
-  if (!isGreeting) return null;
-
-  if (!state.name) {
-    return null;
-  }
+  if (!isGreeting || !state.name) return null;
 
   const timeOfDay = new Date().getHours();
   let greetingResponse = '';
@@ -131,7 +128,7 @@ function handleGreeting(message, state) {
   } else if (lowerMessage.includes('boa noite') && timeOfDay >= 18) {
     greetingResponse = `Boa noite, ${state.name}! Como posso te ajudar hoje? 😊`;
   } else {
-    greetingResponse = `Olá, ${state.name}! Como posso te ajudar hoje? 😊`;
+    greetingResponse = `Oi, ${state.name}! Como posso te ajudar hoje? 😊`;
   }
 
   if (state.type === 'lojista') {
@@ -155,14 +152,12 @@ const webhook = async (req, res) => {
       return res.json({ success: true });
     }
 
-    // Suporta tanto chatId quanto chatLid
     const effectiveChatId = chatId || chatLid;
     if (!effectiveChatId || !text || !text.message) {
       console.log('❌ Dados inválidos no payload');
       return res.status(400).json({ error: 'Dados inválidos' });
     }
 
-    // Usa o phone do payload se disponível, caso contrário extrai de chatId/chatLid
     const senderPhone = phone || effectiveChatId.split('@')[0];
     const message = text.message.trim().toLowerCase();
     let state = getClientState(senderPhone);
@@ -185,11 +180,17 @@ const webhook = async (req, res) => {
         } else {
           state.name = name;
           console.log(`📋 Nome do cliente definido: ${state.name}`);
-          response = await chat(`O cliente acabou de informar que se chama "${state.name}". Por favor, dê boas vindas e pergunte se é um cliente final ou lojista/revendedor de uma forma amigável e profissional.`, senderPhone);
+          response = await chat(
+            `O cliente informou que se chama "${state.name}". Dê boas-vindas de forma amigável e profissional, evitando usar "Seja bem-vindo" ou "É um prazer". Pergunte se é um cliente final ou lojista/revendedor.`,
+            senderPhone
+          );
           state.lastQuestion = 'askType';
         }
       } else {
-        response = await chat("Por favor, dê boas vindas a um novo cliente e peça seu nome de forma amigável e profissional.", senderPhone);
+        response = await chat(
+          "Dê boas-vindas a um novo cliente de forma amigável e profissional, evitando usar 'Seja bem-vindo' ou 'É um prazer'. Peça o nome do cliente para um atendimento personalizado.",
+          senderPhone
+        );
         state.lastQuestion = 'askName';
       }
     } else if (!state.type) {
@@ -198,16 +199,25 @@ const webhook = async (req, res) => {
         if (typeResponse.includes('lojista') || typeResponse.includes('revendedor')) {
           state.type = 'lojista';
           console.log(`📋 Tipo do cliente definido: lojista`);
-          response = await chat(`O cliente ${state.name} é um lojista/revendedor. Por favor, explique nossas condições especiais de atacado de forma clara e profissional, incluindo descontos progressivos, pedido mínimo e formas de pagamento diferenciadas.`, senderPhone);
+          response = await chat(
+            `O cliente ${state.name} é um lojista/revendedor. Explique nossas condições especiais de atacado de forma clara e profissional, incluindo descontos progressivos, pedido mínimo e formas de pagamento diferenciadas. Evite usar "É um prazer" ou repetir saudações como "Olá".`,
+            senderPhone
+          );
           state.lastQuestion = null;
         } else {
           state.type = 'cliente';
           console.log(`📋 Tipo do cliente definido: cliente`);
-          response = await chat(`O cliente ${state.name} é um cliente final para uso pessoal. Pergunte sobre qual estilo de relógio ele procura (clássico, esportivo ou casual) ou recomende algo com base nas preferências.`, senderPhone);
+          response = await chat(
+            `O cliente ${state.name} é um cliente final para uso pessoal. Pergunte sobre qual estilo de relógio ele procura (clássico, esportivo ou casual) ou recomende algo com base nas preferências. Evite usar "É um prazer" ou repetir saudações como "Olá".`,
+            senderPhone
+          );
           state.lastQuestion = null;
         }
       } else {
-        response = await chat(`O cliente ${state.name} ainda não informou se é cliente final ou lojista/revendedor. Pergunte novamente de forma amigável e profissional.`, senderPhone);
+        response = await chat(
+          `O cliente ${state.name} ainda não informou se é cliente final ou lojista/revendedor. Pergunte novamente de forma amigável e profissional, evitando saudações redundantes como "Olá".`,
+          senderPhone
+        );
         state.lastQuestion = 'askType';
       }
     } else {
@@ -250,7 +260,10 @@ const webhook = async (req, res) => {
           }
         } else {
           console.log(`📞 Enviando mensagem "${message}" para OpenAI`);
-          response = await chat(message, senderPhone);
+          response = await chat(
+            `${message}. Evite usar saudações redundantes como "Olá" ou "É um prazer". Responda de forma amigável e profissional, direto ao ponto.`,
+            senderPhone
+          );
           console.log(`📢 Resposta da OpenAI: ${response}`);
         }
       }
