@@ -7,17 +7,16 @@
       "online": "Atendimento online via WhatsApp"
     },
     "location": {
-      "address": "Avenida Imperador, 546 Box-12 - Centro"
+      "address": "Avenida Imperador, 546 Box-12 - Beco da Poeira, Centro"
     },
     "contact": {
       "whatsapp": "(85) 99157-5525",
       "instagram": "@felipe.relogios"
     },
-    "policies": {
-      "pickup": "Produtos disponíveis para retirada na loja",
+    "policies": {      "pickup": "Produtos disponíveis para retirada na loja",
       "reservation": "Reserva pelo WhatsApp com validade de 24h",
       "payment": "Formas de pagamento: PIX, cartões ou dinheiro",
-      "delivery": "Cliente pode solicitar coleta por moto, Uber ou outra empresa de sua preferência (responsabilidade e custo do cliente)"
+      "delivery": "Não fazemos entrega. Preparamos o pedido para coleta por moto, uber ou outra plataforma"
     },
     "observations": [
       "Todos os preços e disponibilidade sujeitos a alteração",

@@ -1,287 +1,108 @@
-const axios = require('axios');
+// controllers/webhook.js
 const { chat } = require('../services/openai');
 const { getClientState, setClientState } = require('../utils/state');
-const { getStoreInfo, getAllProducts, getProductById, getProductsByCategory, formatProductInfo, formatPrice } = require('../utils/catalog');
 
-const ZAPI_URL = `https://api.z-api.io/instances/${process.env.ZAPI_INSTANCE_ID}/token/${process.env.ZAPI_INSTANCE_TOKEN}`;
-const ZAPI_CLIENT_TOKEN = process.env.ZAPI_CLIENT_TOKEN;
-
-// Verifica se a loja está aberta (segunda a sábado, 9h às 17h, fuso de Fortaleza)
-function isStoreOpen() {
-  const now = new Date();
-  const options = { timeZone: 'America/Fortaleza' };
-  const dayOfWeek = now.getDay(options);
-  const hour = now.getHours(options);
-  const minutes = now.getMinutes(options);
-  const timeInMinutes = hour * 60 + minutes;
-
-  const isOpenDay = dayOfWeek >= 1 && dayOfWeek <= 6; // Segunda a sábado
-  const isOpenHour = timeInMinutes >= 9 * 60 && timeInMinutes < 17 * 60; // 9h às 17h
-
-  return isOpenDay && isOpenHour;
-}
-
-// Função para enviar mensagem via Z-API
-async function sendMessage(phone, message) {
-  const maxRetries = 3;
-  let attempt = 1;
-
-  while (attempt <= maxRetries) {
-    try {
-      console.log(`📤 Enviando mensagem para ${phone} (tentativa ${attempt}/${maxRetries})`);
-      const response = await axios.post(
-        `${ZAPI_URL}/send-text`,
-        {
-          phone: phone.replace(/\D/g, ''),
-          message: message
-        },
-        {
-          headers: {
-            'Client-Token': ZAPI_CLIENT_TOKEN,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      console.log(`✅ Mensagem enviada (tentativa ${attempt}/${maxRetries})`);
-      return response.data;
-    } catch (error) {
-      console.error(`❌ Erro ao enviar mensagem via Z-API (tentativa ${attempt}/${maxRetries}):`, error.response?.data || error.message || error);
-      if (attempt === maxRetries) throw error;
-      attempt++;
-      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-    }
-  }
-}
-
-// Função para formatar lista de produtos
-function formatProductList(products) {
-  if (!products || products.length === 0) {
-    return "Nenhum produto encontrado nesta categoria.";
-  }
-
-  return products.map((product, index) => {
-    return `${index + 1}. ${formatProductInfo(product)}\n`;
-  }).join('\n');
-}
-
-// Função para lidar com o catálogo de produtos
-function handleProductCatalog(userMessage, currentState) {
-  const stateMapping = {
-    'VIEW_ALL_PRODUCTS': getAllProducts(),
-    'VIEW_CLASSIC_PRODUCTS': getProductsByCategory('Clássico'),
-    'VIEW_SPORT_PRODUCTS': getProductsByCategory('Esportivo'),
-    'VIEW_CASUAL_PRODUCTS': getProductsByCategory('Casual'),
-    'VIEW_DIGITAL_PRODUCTS': getProductsByCategory('Digital'),
-    'VIEW_FEMALE_PRODUCTS': getProductsByCategory('Feminino')
-  };
-
-  const products = stateMapping[currentState];
-  if (!products) return null;
-
-  return formatProductList(products);
-}
-
-// Função para lidar com informações da loja
-function handleStoreInfo() {
-  const storeInfo = getStoreInfo();
-  let message = "ℹ️ *Informações da Loja*\n\n";
-
-  message += `🕐 *Horário de Funcionamento*\n`;
-  message += `${storeInfo.hours.weekdays}\n`;
-  message += `${storeInfo.hours.weekends}\n`;
-  message += `${storeInfo.hours.online}\n\n`;
-
-  message += `📍 *Endereço*\n`;
-  message += `${storeInfo.location.address}\n\n`;
-
-  message += `📱 *Contato*\n`;
-  message += `WhatsApp: ${storeInfo.contact.whatsapp}\n`;
-  message += `Instagram: ${storeInfo.contact.instagram}\n\n`;
-
-  message += `💳 *Políticas da Loja*\n`;
-  Object.values(storeInfo.policies).forEach(policy => {
-    message += `• ${policy}\n`;
-  });
-
-  message += `\n📌 *Observações*\n`;
-  storeInfo.observations.forEach(observation => {
-    message += `• ${observation}\n`;
-  });
-
-  return message;
-}
-
-// Função para lidar com saudações
-function handleGreeting(message, state) {
-  const greetings = ['oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite'];
-  const lowerMessage = message.toLowerCase();
-  const isGreeting = greetings.some(greeting => lowerMessage.includes(greeting));
-
-  if (!isGreeting || !state.name) return null;
-
-  const timeOfDay = new Date().getHours();
-  let greetingResponse = '';
-  if (lowerMessage.includes('bom dia') && timeOfDay < 12) {
-    greetingResponse = `Bom dia, ${state.name}! Como posso te ajudar hoje? 😊`;
-  } else if (lowerMessage.includes('boa tarde') && timeOfDay >= 12 && timeOfDay < 18) {
-    greetingResponse = `Boa tarde, ${state.name}! Como posso te ajudar hoje? 😊`;
-  } else if (lowerMessage.includes('boa noite') && timeOfDay >= 18) {
-    greetingResponse = `Boa noite, ${state.name}! Como posso te ajudar hoje? 😊`;
-  } else {
-    greetingResponse = `Oi, ${state.name}! Como posso te ajudar hoje? 😊`;
-  }
-
-  if (state.type === 'lojista') {
-    greetingResponse += '\nSe precisar de ajuda com pedidos no atacado, é só me avisar!';
-  } else {
-    greetingResponse += '\nPosso te ajudar a encontrar o relógio perfeito, é só me dizer o que você procura!';
-  }
-
-  return greetingResponse;
-}
-
-// Função principal do webhook
-const webhook = async (req, res) => {
-  const startTime = Date.now();
-  try {
-    console.log('🔥 Webhook recebido:', JSON.stringify(req.body));
-
-    const { chatId, chatLid, text, fromMe, fromApi, phone } = req.body;
-    if (fromMe || fromApi) {
-      console.log('📥 Mensagem ignorada: fromMe ou fromApi');
-      return res.json({ success: true });
-    }
-
-    const effectiveChatId = chatId || chatLid;
-    if (!effectiveChatId || !text || !text.message) {
-      console.log('❌ Dados inválidos no payload');
-      return res.status(400).json({ error: 'Dados inválidos' });
-    }
-
-    const senderPhone = phone || effectiveChatId.split('@')[0];
-    const message = text.message.trim().toLowerCase();
-    let state = getClientState(senderPhone);
-    let response = '';
-
-    console.log(`📊 Estado inicial do cliente ${senderPhone}:`, JSON.stringify(state));
-
-    const storeStatus = isStoreOpen() ? "🟢 *Loja Aberta*" : "🔴 *Loja Fechada* (Atendimento online disponível)";
-    let responsePrefix = `${storeStatus}\n\n`;
-
-    state.metadata.interactions += 1;
-    state.metadata.lastUpdated = Date.now();
-
-    if (!state.name) {
-      if (state.lastQuestion === 'askName') {
-        const name = text.message.trim();
-        if (name.length < 2) {
-          response = "Desculpe, o nome parece muito curto. Pode me dizer seu nome completo, por favor?";
-          state.lastQuestion = 'askName';
-        } else {
-          state.name = name;
-          console.log(`📋 Nome do cliente definido: ${state.name}`);
-          response = await chat(
-            `O cliente informou que se chama "${state.name}". Dê boas-vindas de forma amigável e profissional, evitando usar "Seja bem-vindo" ou "É um prazer". Pergunte se é um cliente final ou lojista/revendedor.`,
-            senderPhone
-          );
-          state.lastQuestion = 'askType';
-        }
-      } else {
-        response = await chat(
-          "Dê boas-vindas a um novo cliente de forma amigável e profissional, evitando usar 'Seja bem-vindo' ou 'É um prazer'. Peça o nome do cliente para um atendimento personalizado.",
-          senderPhone
-        );
-        state.lastQuestion = 'askName';
-      }
-    } else if (!state.type) {
-      if (state.lastQuestion === 'askType') {
-        const typeResponse = message;
-        if (typeResponse.includes('lojista') || typeResponse.includes('revendedor')) {
-          state.type = 'lojista';
-          console.log(`📋 Tipo do cliente definido: lojista`);
-          response = await chat(
-            `O cliente ${state.name} é um lojista/revendedor. Explique nossas condições especiais de atacado de forma clara e profissional, incluindo descontos progressivos, pedido mínimo e formas de pagamento diferenciadas. Evite usar "É um prazer" ou repetir saudações como "Olá".`,
-            senderPhone
-          );
-          state.lastQuestion = null;
-        } else {
-          state.type = 'cliente';
-          console.log(`📋 Tipo do cliente definido: cliente`);
-          response = await chat(
-            `O cliente ${state.name} é um cliente final para uso pessoal. Pergunte sobre qual estilo de relógio ele procura (clássico, esportivo ou casual) ou recomende algo com base nas preferências. Evite usar "É um prazer" ou repetir saudações como "Olá".`,
-            senderPhone
-          );
-          state.lastQuestion = null;
-        }
-      } else {
-        response = await chat(
-          `O cliente ${state.name} ainda não informou se é cliente final ou lojista/revendedor. Pergunte novamente de forma amigável e profissional, evitando saudações redundantes como "Olá".`,
-          senderPhone
-        );
-        state.lastQuestion = 'askType';
-      }
-    } else {
-      const greetingResponse = handleGreeting(message, state);
-      if (greetingResponse) {
-        console.log(`📢 Resposta de saudação gerada: ${greetingResponse}`);
-        response = greetingResponse;
-      } else {
-        const catalogResponse = handleProductCatalog(message, state.currentState);
-        if (catalogResponse) {
-          console.log(`📢 Resposta do catálogo gerada: ${catalogResponse}`);
-          response = catalogResponse;
-        } else if (state.currentState === 'STORE_INFO_STATE') {
-          response = handleStoreInfo();
-          console.log(`📢 Resposta de informações da loja gerada: ${response}`);
-        } else if (message.includes('reservar')) {
-          let product = null;
-          const matchByNumber = message.match(/reservar\s+(\d+)/i);
-          const matchById = message.match(/reservar\s+([a-z0-9-]+)/i);
-
-          if (matchByNumber) {
-            const productIndex = parseInt(matchByNumber[1]) - 1;
-            const products = getAllProducts();
-            if (productIndex >= 0 && productIndex < products.length) {
-              product = products[productIndex];
-            }
-          } else if (matchById) {
-            const productId = matchById[1];
-            product = getProductById(productId);
-          }
-
-          if (product) {
-            const reservationTime = new Date().toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' });
-            response = `✅ *Reserva Confirmada!*\n\nVocê reservou o *${product.name}* por ${formatPrice(product.price)}.\n*Data/Hora da Reserva*: ${reservationTime}\nO produto estará separado por 24h na loja Felipe Relógios (Avenida Imperador, 546 Box-12 - Centro).\n\nPara retirada, aceitamos PIX, cartões ou dinheiro. Se preferir entrega, você pode contratar um serviço de transporte (moto, Uber, etc.), sendo o custo por sua conta.\n\nQualquer dúvida, estamos à disposição! 😊`;
-            state.lastReservation = product.id;
-            console.log(`📢 Resposta de reserva gerada: ${response}`);
-          } else {
-            response = "❌ Desculpe, não encontrei o produto. Use o número do produto (ex.: 'reservar 1') ou o ID (ex.: 'reservar atlantis-masculino'). Para ver os produtos disponíveis, envie 'catálogo'.";
-            console.log(`📢 Resposta de erro na reserva: ${response}`);
-          }
-        } else {
-          console.log(`📞 Enviando mensagem "${message}" para OpenAI`);
-          response = await chat(
-            `${message}. Evite usar saudações redundantes como "Olá" ou "É um prazer". Responda de forma amigável e profissional, direto ao ponto.`,
-            senderPhone
-          );
-          console.log(`📢 Resposta da OpenAI: ${response}`);
-        }
-      }
-    }
-
-    response = responsePrefix + response;
-    console.log(`📢 Resposta final gerada: ${response}`);
-
-    setClientState(senderPhone, state);
-    console.log(`📊 Estado final do cliente ${senderPhone}:`, JSON.stringify(state));
-
-    await sendMessage(senderPhone, response);
-    console.log(`✅ Processamento completo em ${Date.now() - startTime}ms`);
-    res.json({ success: true });
-  } catch (err) {
-    console.error('❌ Erro no webhook:', err.message || err);
-    res.status(500).json({ error: 'Erro interno', details: err.message || err });
-  }
+// Mensagens padrão
+const MESSAGES = {
+    greetings: ['oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite'],
+    askName: 'Por favor, me diga seu nome completo para que eu possa te atender melhor.',
+    shortName: 'Por favor, me diga seu nome completo.',
+    askType: (name) => `Olá ${name}! Você é cliente final ou lojista/revendedor?`,
+    confirmType: (type) => `Perfeito! Vou te atender como ${type}. Como posso ajudar?`
 };
+
+async function webhook(req, res) {
+    try {
+        console.log('🔥 Payload recebido:', JSON.stringify(req.body));
+
+        // Validação básica
+        const { chatId, chatLid, text, fromMe, fromApi } = req.body;
+        if (fromMe || fromApi) {
+            return res.sendStatus(200);
+        }
+
+        const id = chatId || chatLid;
+        if (!id || !text?.message) {
+            return res.status(400).json({ error: 'Payload inválido' });
+        }
+
+        // Extrai telefone e mensagem
+        const phone = id.split('@')[0];
+        const message = text.message.trim().toLowerCase();
+
+        // Obtém estado atual
+        let state = await getClientState(phone);
+        const oldState = { ...state };
+
+        let response;
+
+        // Lógica principal baseada no estado atual
+        if (state.lastQuestion === 'askName' || !state.name) {
+            // Se for uma saudação, mantém pedindo o nome
+            if (MESSAGES.greetings.includes(message)) {
+                response = MESSAGES.askName;
+            } else if (message.length < 2) {
+                response = MESSAGES.shortName;
+            } else {
+                state.name = text.message.trim(); // Usa o texto original para preservar capitalização
+                state.lastQuestion = 'askType';
+                response = MESSAGES.askType(state.name);
+            }
+        } else if (state.lastQuestion === 'askType' || !state.type) {
+            const isLojista = /lojista|revenda|atacado/i.test(message);
+            state.type = isLojista ? 'lojista' : 'cliente';
+            state.lastQuestion = 'chat';
+            response = MESSAGES.confirmType(state.type);
+        } else {
+            response = await chat(message);
+        }
+
+        // Atualiza mensagens
+        state.messages = state.messages || [];
+        state.messages.push(
+            { role: 'user', content: text.message.trim() },
+            { role: 'assistant', content: response }
+        );
+
+        // Limita histórico de mensagens
+        if (state.messages.length > 10) {
+            state.messages = state.messages.slice(-10);
+        }
+
+        // Atualiza metadata
+        if (state.lastQuestion !== oldState.lastQuestion || 
+            state.name !== oldState.name || 
+            state.type !== oldState.type) {
+            state.metadata = {
+                ...state.metadata,
+                createdAt: oldState.metadata?.createdAt || Date.now(),
+                lastUpdated: Date.now(),
+                interactions: (oldState.metadata?.interactions || 0) + 1
+            };
+        }
+
+        // Atualiza estado
+        state = await setClientState(phone, state);
+        console.log('📊 Estado atualizado:', state);
+
+        // Em ambiente de teste, apenas simula o envio
+        if (process.env.NODE_ENV === 'test') {
+            console.log('✅ Mensagem enviada');
+            return res.json({ success: true });
+        }
+
+        // Em produção envia a mensagem real
+        try {
+            await require('./zapi').sendMessage(phone, response);
+            return res.json({ success: true });
+        } catch (error) {
+            console.error('❌ Erro ao enviar mensagem:', error);
+            return res.json({ success: true, warning: 'Erro ao enviar mensagem' });
+        }
+    } catch (err) {
+        console.error('❌ Erro:', err);
+        return res.status(500).json({ error: 'Erro interno' });
+    }
+}
 
 module.exports = webhook;
