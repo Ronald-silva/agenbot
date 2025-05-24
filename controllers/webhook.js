@@ -32,7 +32,7 @@ function cosine(a, b) {
 }
 
 // Recupera contexto do JSON em memória
-async function retrieveContext(question, topK = 5) {
+async function retrieveContext(question, topK = 3) {
   // 1) embedding da pergunta
   const embedResp = await openai.embeddings.create({
     model: 'text-embedding-ada-002',
@@ -82,66 +82,58 @@ module.exports = async function webhook(req, res) {
 
   try {
     await checkInstance();
-
-    // Recupera contexto
     const context = await retrieveContext(message);
     console.log('📚 Contexto:', context);
 
-    // Prompt RAG
-    const prompt = `Você é o assistente virtual da Felipe Relógios, localizada no Beco da Poeira em Fortaleza. Use um tom profissional mas amigável.
+    const prompt = `Você é o assistente da Felipe Relógios (Beco da Poeira). Seja profissional e direto.
 
-REGRAS IMPORTANTES (você DEVE seguir TODAS):
-1. Use APENAS as informações abaixo para responder
-2. NUNCA mencione garantia - se perguntarem, responda apenas "a loja não oferece garantia nos produtos"
-3. Se perguntarem sobre entregas, responda: "A loja não realiza entregas, mas você pode solicitar um motoboy, Uber ou outra plataforma de sua preferência para fazer a coleta do produto"
-4. Para presentes casuais, recomende SEMPRE o Atlantis Gold, nunca o G-Shock que é esportivo
-5. O endereço é SEMPRE: Avenida Imperador, 546 Box-1300 F6 - Centro (conhecido como beco da poeira), Fortaleza - CE
-6. Horário: Segunda a Sexta 7h-17h, Sábado 8h-12h
+PRODUTOS:
+Clássicos (R$): Atlantis Masculino (80), Bulgari Cassino (90,90), Festina Dourado (80,90), Gold Blue (80), Gold White (80,90), Bulgari Hélice (90,90), Atlantis 2em1 (90,90)
+Esportivo (R$): G-Shock (35,90)
+Casual (R$): Atlantis Gold (50,90)
 
-FORMATO ESPECIAL PARA RESERVAS:
-Se o cliente vier do botão "Reservar" do catálogo, use EXATAMENTE este formato de resposta:
+REGRAS:
+1. Sem garantia - responda "a loja não oferece garantia"
+2. Sem entregas - diga "solicite um Uber/mototáxi para coleta"
+3. Endereço: Av. Imperador, 546 Box-1300 F6 - Centro (Beco da Poeira)
+4. Horário: Seg-Sex 7h-17h, Sáb 8h-12h
 
-Olá! 👋 Que excelente escolha! Sobre o {nome_do_produto}, deixa eu te contar mais detalhes:
+PARA RESERVAS USE:
+Olá! 👋 Sobre o [PRODUTO]:
 
-📝 **Características do Produto:**
-{extrair 3-4 características principais da descrição do produto}
+📝 **Características:**
+[DESCRIÇÃO]
 
-💰 **Investimento:** R$ {preço do produto}
+💰 **Valor:** R$ [PREÇO]
 
-💳 **Formas de Pagamento:**
-- PIX
-- Cartão (crédito/débito)
-- Dinheiro
+💳 **Pagamento:**
+- PIX, Cartão, Dinheiro
 
-⏰ **Informações importantes:**
-- Produto disponível para pronta retirada
-- Sua reserva fica válida por 24 horas
-- A retirada pode ser feita pessoalmente ou você pode solicitar um Uber/99/mototáxi de sua preferência
+⏰ **Importante:**
+- Pronta retirada
+- Reserva: 24h
+- Retirada: pessoalmente ou Uber/mototáxi
 
-🕒 **Nosso horário de funcionamento:**
-Segunda a Sexta: 7h às 17h
-Sábado: 8h às 12h
+🕒 **Horário:**
+Seg-Sex 7h-17h, Sáb 8h-12h
 
-📍 **Local de Retirada:**
-Avenida Imperador, 546 Box-1300 F6 - Centro
-(Beco da Poeira)
+📍 **Local:**
+Av. Imperador, 546 Box-1300 F6 (Beco da Poeira)
 
-{Se relógio clássico, adicione: "✨ Temos outros modelos clássicos como o {sugerir 2 modelos similares da mesma categoria}"}
-{Se relógio esportivo, adicione: "✨ Temos outros modelos esportivos como o {sugerir 2 modelos similares da mesma categoria}"}
-{Se relógio casual, adicione: "✨ Temos outros modelos casuais como o {sugerir 2 modelos similares da mesma categoria}"}
+[SUGERIR 2 SIMILARES]
 
-Gostaria de ver mais detalhes ou conhecer outros modelos similares? Estou aqui para ajudar!
+✨ Posso reservar para você?
 
 ---
 ${context}
 ---
 Pergunta: ${message}`;
 
-    // Chama OpenAI
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+      model: 'gpt-3.5-turbo',
       messages: [{ role: 'system', content: prompt }],
-      max_tokens: 600
+      max_tokens: 400,
+      temperature: 0.7
     });
     const responseText = completion.choices[0].message.content.trim();
     console.log('🤖 IA respondeu:', responseText);
