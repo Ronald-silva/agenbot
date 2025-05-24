@@ -1,13 +1,26 @@
 {
-  "85991575525": {
-    "lastQuestion": "askName",
-    "name": null,
-    "type": null,
-    "metadata": {
-      "createdAt": 1747913920239,
-      "lastUpdated": 1747913920246,
-      "interactions": 1
-    },
-    "lastUpdated": 1747906095681
+  "START_STATE": {
+    "message": "👋 Olá, sou o assistente virtual da *Felipe Relógios*.\nComo posso ajudar?\n\n1️⃣ Ver catálogo de produtos\n2️⃣ Informações da loja\n3️⃣ Falar com atendente",
+    "options": {
+      "1": "CATALOG_STATE",
+      "2": "STORE_INFO_STATE", 
+      "3": "ATTENDANT_STATE"
+    }
+  },
+  "CATALOG_STATE": {
+    "message": "🕐 *Catálogo Felipe Relógios*\n\nEscolha uma categoria:\n\n1️⃣ Ver todos os relógios\n2️⃣ Relógios clássicos\n3️⃣ Relógios esportivos\n4️⃣ Relógios casuais\n\n0️⃣ Voltar ao menu principal",
+    "options": {
+      "0": "START_STATE",
+      "1": "VIEW_ALL_PRODUCTS",
+      "2": "VIEW_CLASSIC_PRODUCTS",
+      "3": "VIEW_SPORT_PRODUCTS",
+      "4": "VIEW_CASUAL_PRODUCTS"
+    }
+  },
+  "STORE_INFO_STATE": {
+    "message": "ℹ️ *Informações da Loja*\n\n🕐 *Horário de Funcionamento*\n{{hours}}\n\n📍 *Endereço*\n{{address}}\n\n📱 *Contato*\n{{contact}}\n\n💳 *Formas de Pagamento e Entrega*\n{{policies}}\n\n0️⃣ Voltar ao menu principal",
+    "options": {
+      "0": "START_STATE"
+    }
   }
 }

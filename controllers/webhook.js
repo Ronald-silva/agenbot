@@ -1,108 +1,116 @@
-// controllers/webhook.js
-const { chat } = require('../services/openai');
-const { getClientState, setClientState } = require('../utils/state');
-
-// Mensagens padrão
-const MESSAGES = {
-    greetings: ['oi', 'olá', 'ola', 'bom dia', 'boa tarde', 'boa noite'],
-    askName: 'Por favor, me diga seu nome completo para que eu possa te atender melhor.',
-    shortName: 'Por favor, me diga seu nome completo.',
-    askType: (name) => `Olá ${name}! Você é cliente final ou lojista/revendedor?`,
-    confirmType: (type) => `Perfeito! Vou te atender como ${type}. Como posso ajudar?`
-};
-
-async function webhook(req, res) {
-    try {
-        console.log('🔥 Payload recebido:', JSON.stringify(req.body));
-
-        // Validação básica
-        const { chatId, chatLid, text, fromMe, fromApi } = req.body;
-        if (fromMe || fromApi) {
-            return res.sendStatus(200);
-        }
-
-        const id = chatId || chatLid;
-        if (!id || !text?.message) {
-            return res.status(400).json({ error: 'Payload inválido' });
-        }
-
-        // Extrai telefone e mensagem
-        const phone = id.split('@')[0];
-        const message = text.message.trim().toLowerCase();
-
-        // Obtém estado atual
-        let state = await getClientState(phone);
-        const oldState = { ...state };
-
-        let response;
-
-        // Lógica principal baseada no estado atual
-        if (state.lastQuestion === 'askName' || !state.name) {
-            // Se for uma saudação, mantém pedindo o nome
-            if (MESSAGES.greetings.includes(message)) {
-                response = MESSAGES.askName;
-            } else if (message.length < 2) {
-                response = MESSAGES.shortName;
-            } else {
-                state.name = text.message.trim(); // Usa o texto original para preservar capitalização
-                state.lastQuestion = 'askType';
-                response = MESSAGES.askType(state.name);
-            }
-        } else if (state.lastQuestion === 'askType' || !state.type) {
-            const isLojista = /lojista|revenda|atacado/i.test(message);
-            state.type = isLojista ? 'lojista' : 'cliente';
-            state.lastQuestion = 'chat';
-            response = MESSAGES.confirmType(state.type);
-        } else {
-            response = await chat(message);
-        }
-
-        // Atualiza mensagens
-        state.messages = state.messages || [];
-        state.messages.push(
-            { role: 'user', content: text.message.trim() },
-            { role: 'assistant', content: response }
-        );
-
-        // Limita histórico de mensagens
-        if (state.messages.length > 10) {
-            state.messages = state.messages.slice(-10);
-        }
-
-        // Atualiza metadata
-        if (state.lastQuestion !== oldState.lastQuestion || 
-            state.name !== oldState.name || 
-            state.type !== oldState.type) {
-            state.metadata = {
-                ...state.metadata,
-                createdAt: oldState.metadata?.createdAt || Date.now(),
-                lastUpdated: Date.now(),
-                interactions: (oldState.metadata?.interactions || 0) + 1
-            };
-        }
-
-        // Atualiza estado
-        state = await setClientState(phone, state);
-        console.log('📊 Estado atualizado:', state);
-
-        // Em ambiente de teste, apenas simula o envio
-        if (process.env.NODE_ENV === 'test') {
-            console.log('✅ Mensagem enviada');
-            return res.json({ success: true });
-        }
-
-        // Em produção envia a mensagem real
-        try {
-            await require('./zapi').sendMessage(phone, response);
-            return res.json({ success: true });
-        } catch (error) {
-            console.error('❌ Erro ao enviar mensagem:', error);
-            return res.json({ success: true, warning: 'Erro ao enviar mensagem' });
-        }
-    } catch (err) {
-        console.error('❌ Erro:', err);
-        return res.status(500).json({ error: 'Erro interno' });
-    }
+// controllers/webhook.js (RAG in-memory via contexts.json)
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
 }
 
-module.exports = webhook;
+const axios    = require('axios');
+const OpenAI   = require('openai');
+const contexts = require('../contexts.json'); // array of {snippet, embedding}
+
+// Vars de ambiente
+const INSTANCE_ID    = process.env.ZAPI_INSTANCE_ID?.trim();
+const INSTANCE_TOKEN = process.env.ZAPI_INSTANCE_TOKEN?.trim();
+const CLIENT_TOKEN   = process.env.ZAPI_CLIENT_TOKEN?.trim();
+const OPENAI_KEY     = process.env.OPENAI_API_KEY?.trim();
+
+if (!INSTANCE_ID || !INSTANCE_TOKEN || !CLIENT_TOKEN || !OPENAI_KEY) {
+  console.error('❌ Defina ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN, ZAPI_CLIENT_TOKEN e OPENAI_API_KEY');
+  process.exit(1);
+}
+
+const openai = new OpenAI({ apiKey: OPENAI_KEY });
+
+// Sem banco: simples função de similaridade
+function cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na  += a[i] * a[i];
+    nb  += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(na) * Math.sqrt(nb) + 1e-8);
+}
+
+// Recupera contexto do JSON em memória
+async function retrieveContext(question, topK = 5) {
+  // 1) embedding da pergunta
+  const embedResp = await openai.embeddings.create({
+    model: 'text-embedding-ada-002',
+    input: question
+  });
+  const qv = embedResp.data[0].embedding;
+
+  // 2) calcula similaridade
+  const sims = contexts.map(c => ({ snippet: c.snippet, score: cosine(qv, c.embedding) }));
+
+  // 3) pega os topK
+  return sims
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+    .map(({ snippet }) => snippet)
+    .join('\n---\n');
+}
+
+// Verifica status da instância Z-API
+async function checkInstance() {
+  const url = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/status`;
+  const { data } = await axios.get(url, { headers: { 'Client-Token': CLIENT_TOKEN } });
+  console.log('🔍 Z-API status:', data);
+  if (!data.connected || !data.smartphoneConnected) {
+    throw new Error(`Z-API offline: ${data.error}`);
+  }
+}
+
+module.exports = async function webhook(req, res) {
+  console.log('🔥 Payload recebido:', JSON.stringify(req.body));
+
+  // Filtra apenas mensagens de usuário
+  if (req.body.type !== 'ReceivedCallback' || req.body.fromApi || req.body.fromMe) {
+    return res.sendStatus(200);
+  }
+
+  // Extrai telefone
+  const rawPhone = req.body.chatId || req.body.phone || '';
+  const phone = rawPhone.split('@')[0];
+  if (!phone) return res.status(400).json({ error: 'Número não encontrado' });
+
+  // Extrai mensagem
+  const message = req.body.text?.message || req.body.body || req.body.message || '';
+  if (!message) return res.status(400).json({ error: 'Mensagem vazia' });
+
+  console.log(`📩 De ${phone}: "${message}"`);
+
+  try {
+    await checkInstance();
+
+    // Recupera contexto
+    const context = await retrieveContext(message);
+    console.log('📚 Contexto:', context);
+
+    // Prompt RAG
+    const prompt = `Você é o LuceBot, assistente do Colégio Luce. Use as informações abaixo para responder de forma profissional e institucional.\n---\n${context}\n---\nPergunta: ${message}`;
+
+    // Chama OpenAI
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [ { role: 'system', content: prompt } ],
+      max_tokens: 300
+    });
+    const responseText = completion.choices[0].message.content.trim();
+    console.log('🤖 IA respondeu:', responseText);
+
+    // Envia via Z-API
+    const sendUrl = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-text`;
+    await axios.post(
+      sendUrl,
+      { phone, message: responseText },
+      { headers: { 'Content-Type': 'application/json', 'Client-Token': CLIENT_TOKEN } }
+    );
+    console.log('✅ Z-API respondeu');
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('❌ Erro no webhook:', err.response?.data || err.message);
+    return res.status(500).json({ error: 'Erro interno', details: err.response?.data || err.message });
+  }
+};

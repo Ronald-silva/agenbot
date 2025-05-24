@@ -1,101 +1,127 @@
-const { OpenAI } = require('openai');
-const storeInfo = require('../data/store_info.json');
-
-// Inicializa o cliente OpenAI
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-/**
- * Gera o system prompt com informações e regras da loja
- */
-function getSystemPrompt() {
-  const info = storeInfo.storeInfo;
-  return `
-Você é o vendedor virtual da ${info.name}, uma loja de relógios no ${info.location.address}.
-Seu tom deve ser de um vendedor real, experiente e simpático, sem formalidades excessivas.
-
-Regras:
-1. Seja direto e natural, nada de "em que posso ajudar?".
-2. Use no máximo 1 emoji por mensagem.
-3. Não use frases prontas ou cordiais demais.
-4. Se perguntarem sobre entrega, responda exatamente:
-   "Não, mas preparamos o seu pedido para coleta de moto, uber ou outra plataforma de sua preferência. Tudo bem?"
-5. Financiamento e atacado:
-   • Parcelamento em até 6x sem juros
-   • Pagamento em 30/60/90 dias para lojistas
-   • Pedido mínimo de 10 peças por modelo
-6. Formas de pagamento: PIX, cartão de crédito/débito e dinheiro.
-7. Importante: **não oferecemos garantia** nos produtos.
-8. Destaque sempre o nosso **melhor custo-benefício**: relógios de qualidade com preços justos.
-
-Informações resumidas da loja:
-• Especializados em relógios de alta qualidade com preços competitivos  
-• Pedido mínimo de 10 peças para atacado, descontos progressivos  
-• Atendimento personalizado para lojistas e consumidores finais  
-`;
+// openai.js
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
 }
 
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+if (!OPENAI_API_KEY) {
+  console.error('ERRO: OPENAI_API_KEY não encontrada no arquivo .env');
+  process.exit(1);
+}
+
+const CONTEXTS_PATH = path.join(__dirname, 'contexts.json');
+let contexts = JSON.parse(fs.readFileSync(CONTEXTS_PATH, 'utf-8'));
+
 /**
- * Ajusta o estilo de resposta baseado no tipo de usuário
- * @param {'cliente'|'lojista'} userType
+ * Gera embeddings para cada snippet que ainda não tiver vetor e
+ * atualiza o contexts.json para as próximas vezes.
  */
-function getUserTypePrompt(userType) {
-  if (userType === 'lojista') {
-    return `
-Este usuário é um lojista/revendedor:
-- Priorize condições de atacado, nota fiscal e ofertas especiais.
-- Destaque o potencial de lucro.
-- Seja objetivo e focado em negócios.
-- Utilize linguagem direta sem mencionar preços de varejo.
-`;
-  } else {
-    return `
-Este usuário é um cliente final:
-- Foque na experiência pessoal, design e durabilidade.
-- Ajude na escolha com base no perfil e necessidade.
-- Seja consultivo, menos agressivo em preço.
-`;
+async function ensureEmbeddings() {
+  let updated = false;
+  for (const ctx of contexts) {
+    if (!Array.isArray(ctx.embedding) || ctx.embedding.length === 0) {
+      const resp = await axios.post(
+        'https://api.openai.com/v1/embeddings',
+        {
+          model: 'text-embedding-ada-002',
+          input: ctx.snippet
+        },
+        {
+          headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }
+        }
+      );
+      ctx.embedding = resp.data.data[0].embedding;
+      updated = true;
+    }
+  }
+  if (updated) {
+    fs.writeFileSync(CONTEXTS_PATH, JSON.stringify(contexts, null, 2));
   }
 }
 
-// Contexto adicional enxuto da loja
-const slimContext = [
-  "Somos especializados em relógios de alta qualidade com preços competitivos. Nossa loja está no Beco da Poeira.",
-  "Trabalhamos sempre para oferecer o melhor custo-benefício: qualidade e preço justo.",
-  "Para compras no atacado, oferecemos descontos progressivos: quanto maior a quantidade, melhor o preço. Pedido mínimo de 10 peças por modelo.",
-  "Facilidades para lojistas: parcelamento em até 6x sem juros, pagamento em 30/60/90 dias, nota fiscal.",
-  "Atendimento personalizado para cada cliente, seja lojista ou consumidor final."
-];
+/**
+ * Retorna o embedding de um texto qualquer
+ */
+async function getEmbedding(text) {
+  const resp = await axios.post(
+    'https://api.openai.com/v1/embeddings',
+    {
+      model: 'text-embedding-ada-002',
+      input: text
+    },
+    {
+      headers: { Authorization: `Bearer ${OPENAI_API_KEY}` }
+    }
+  );
+  return resp.data.data[0].embedding;
+}
 
 /**
- * Chama a API da OpenAI com contexto completo e retorna a resposta
- * @param {string} message - Mensagem do usuário
- * @param {Array<{role:string, content:string}>} history - Histórico de diálogo
- * @param {'cliente'|'lojista'} userType - Tipo de usuário
- * @returns {Promise<string>} - Resposta do agente
+ * Cosine similarity entre dois vetores
  */
-async function chat(message, history = [], userType = 'cliente') {
-  // Monta os prompts
-  const systemPrompt = getSystemPrompt();
-  const userTypePrompt = getUserTypePrompt(userType);
+function cosineSimilarity(a, b) {
+  let dot = 0, normA = 0, normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB) + 1e-10);
+}
 
-  // Constrói lista de mensagens para o modelo
-  const messages = [
-    { role: 'system', content: systemPrompt + '\n' + userTypePrompt },
-    ...slimContext.map(text => ({ role: 'system', content: text })),
-    ...history,
-    { role: 'user', content: message }
-  ];
+/**
+ * Retorna os topK snippets mais relevantes para a query
+ */
+async function getRelevantSnippets(query, topK = 3) {
+  await ensureEmbeddings();
+  const qEmb = await getEmbedding(query);
+  const sims = contexts
+    .map(ctx => ({
+      snippet: ctx.snippet,
+      score: cosineSimilarity(qEmb, ctx.embedding)
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, topK)
+    .map(x => x.snippet);
+  return sims;
+}
 
-  // Chamada à API
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4-turbo',
-    messages: messages,
-    temperature: 0.7,
-    max_tokens: 500
-  });
+/**
+ * Função principal: recebe a mensagem do usuário, busca contextos
+ * relevantes e chama o chat/completions da OpenAI
+ */
+async function chat(msg) {
+  console.log('🔍 Buscando contextos relevantes...');
+  const snippets = await getRelevantSnippets(msg);
 
-  // Retorna texto da resposta
-  return completion.choices[0].message.content.trim();
+  const systemPrompt = `
+Você é o assistente virtual da Felipe Relógios. Seu objetivo é ajudar os clientes a encontrar o relógio perfeito e fornecer informações sobre produtos e serviços. Use um tom profissional mas amigável. Utilize estas informações para responder às perguntas:
+${snippets.map(s => `- ${s}`).join('\n')}
+`.trim();
+  console.log('💬 Enviando requisição de chat/completions para a OpenAI...');
+  const resp = await axios.post(
+    'https://api.openai.com/v1/chat/completions',
+    {
+      model: 'gpt-4-turbo-preview',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: msg }
+      ],
+      temperature: 0.7
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+
+  return resp.data.choices[0].message.content.trim();
 }
 
 module.exports = { chat };
