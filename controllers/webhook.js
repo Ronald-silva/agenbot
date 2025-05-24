@@ -93,7 +93,7 @@ module.exports = async function webhook(req, res) {
 REGRAS IMPORTANTES (você DEVE seguir TODAS):
 1. Use APENAS as informações abaixo para responder
 2. NUNCA mencione garantia - se perguntarem, responda apenas "a loja não oferece garantia nos produtos"
-3. Se perguntarem sobre entregas, diga apenas "para informações sobre entrega, entre em contato direto com a loja"
+3. Se perguntarem sobre entregas, responda: "A loja não realiza entregas, mas você pode solicitar um motoboy, Uber ou outra plataforma de sua preferência para fazer a coleta do produto"
 4. Para presentes casuais, recomende SEMPRE o Atlantis Gold, nunca o G-Shock que é esportivo
 5. O endereço é SEMPRE: Avenida Imperador, 546 Box-1300 F6 - Centro (conhecido como beco da poeira), Fortaleza - CE
 6. Horário: Segunda a Sexta 7h-17h, Sábado 8h-12h
