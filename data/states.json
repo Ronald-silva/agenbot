@@ -8,13 +8,37 @@
     }
   },
   "CATALOG_STATE": {
-    "message": "🕐 *Catálogo Felipe Relógios*\n\nEscolha uma categoria:\n\n1️⃣ Ver todos os relógios\n2️⃣ Relógios clássicos\n3️⃣ Relógios esportivos\n4️⃣ Relógios casuais\n\n0️⃣ Voltar ao menu principal",
+    "message": "🕐 *Catálogo Felipe Relógios*\n\nEscolha uma categoria:\n\n1️⃣ Ver todos os relógios\n2️⃣ Relógios clássicos (a partir de R$ 80,00)\n3️⃣ Relógios esportivos (a partir de R$ 35,90)\n4️⃣ Relógios casuais (a partir de R$ 50,90)\n\n0️⃣ Voltar ao menu principal",
     "options": {
       "0": "START_STATE",
       "1": "VIEW_ALL_PRODUCTS",
       "2": "VIEW_CLASSIC_PRODUCTS",
       "3": "VIEW_SPORT_PRODUCTS",
       "4": "VIEW_CASUAL_PRODUCTS"
+    }
+  },
+  "VIEW_ALL_PRODUCTS": {
+    "message": "📱 *Todos os Relógios*\n\nConfira nossa seleção completa:\n\n{{products}}\n\n0️⃣ Voltar ao catálogo",
+    "options": {
+      "0": "CATALOG_STATE"
+    }
+  },
+  "VIEW_CLASSIC_PRODUCTS": {
+    "message": "👔 *Relógios Clássicos*\n\nElegância e sofisticação:\n\n{{products}}\n\n0️⃣ Voltar ao catálogo",
+    "options": {
+      "0": "CATALOG_STATE"
+    }
+  },
+  "VIEW_SPORT_PRODUCTS": {
+    "message": "⌚ *Relógios Esportivos*\n\nResistência e funcionalidade:\n\n{{products}}\n\n0️⃣ Voltar ao catálogo",
+    "options": {
+      "0": "CATALOG_STATE"
+    }
+  },
+  "VIEW_CASUAL_PRODUCTS": {
+    "message": "🌟 *Relógios Casuais*\n\nEstilo para o dia a dia:\n\n{{products}}\n\n0️⃣ Voltar ao catálogo",
+    "options": {
+      "0": "CATALOG_STATE"
     }
   },
   "STORE_INFO_STATE": {
