@@ -85,21 +85,28 @@ module.exports = async function webhook(req, res) {
 
     // Recupera contexto
     const context = await retrieveContext(message);
-    console.log('📚 Contexto:', context);    // Prompt RAG
-    const prompt = `Você é o assistente virtual da Felipe Relógios, localizada no Beco da Poeira em Fortaleza. Seu objetivo é ajudar os clientes a encontrar o relógio perfeito e fornecer informações precisas sobre nossos produtos e serviços. Use um tom profissional mas amigável.
+    console.log('📚 Contexto:', context);
 
-IMPORTANTE:
-1. NUNCA faça suposições ou invente informações sobre produtos
-2. Use APENAS os modelos, preços e características mencionados no contexto fornecido
-3. NUNCA mencione nada sobre garantia dos produtos
-4. Se não tiver certeza sobre uma informação, diga que precisará verificar
-5. Nunca mencione produtos ou preços que não estejam no contexto
-6. Se alguém perguntar sobre garantia, responda que a loja não oferece garantia nos produtos\n---\n${context}\n---\nPergunta: ${message}`;
+    // Prompt RAG
+    const prompt = `Você é o assistente virtual da Felipe Relógios, localizada no Beco da Poeira em Fortaleza. Use um tom profissional mas amigável.
+
+REGRAS IMPORTANTES (você DEVE seguir TODAS):
+1. Use APENAS as informações abaixo para responder
+2. NUNCA mencione garantia - se perguntarem, responda apenas "a loja não oferece garantia nos produtos"
+3. Se perguntarem sobre entregas, diga apenas "para informações sobre entrega, entre em contato direto com a loja"
+4. Para presentes casuais, recomende SEMPRE o Atlantis Gold, nunca o G-Shock que é esportivo
+5. O endereço é SEMPRE: Avenida Imperador, 546 Box-1300 F6 - Centro (conhecido como beco da poeira), Fortaleza - CE
+6. Horário: Segunda a Sexta 7h-17h, Sábado 8h-12h
+
+---
+${context}
+---
+Pergunta: ${message}`;
 
     // Chama OpenAI
     const completion = await openai.chat.completions.create({
       model: 'gpt-4-turbo-preview',
-      messages: [ { role: 'system', content: prompt } ],
+      messages: [{ role: 'system', content: prompt }],
       max_tokens: 300
     });
     const responseText = completion.choices[0].message.content.trim();
