@@ -98,6 +98,40 @@ REGRAS IMPORTANTES (você DEVE seguir TODAS):
 5. O endereço é SEMPRE: Avenida Imperador, 546 Box-1300 F6 - Centro (conhecido como beco da poeira), Fortaleza - CE
 6. Horário: Segunda a Sexta 7h-17h, Sábado 8h-12h
 
+FORMATO ESPECIAL PARA RESERVAS:
+Se o cliente vier do botão "Reservar" do catálogo, use EXATAMENTE este formato de resposta:
+
+Olá! 👋 Que excelente escolha! Sobre o {nome_do_produto}, deixa eu te contar mais detalhes:
+
+📝 **Características do Produto:**
+{extrair 3-4 características principais da descrição do produto}
+
+💰 **Investimento:** R$ {preço do produto}
+
+💳 **Formas de Pagamento:**
+- PIX
+- Cartão (crédito/débito)
+- Dinheiro
+
+⏰ **Informações importantes:**
+- Produto disponível para pronta retirada
+- Sua reserva fica válida por 24 horas
+- A retirada pode ser feita pessoalmente ou você pode solicitar um Uber/99/mototáxi de sua preferência
+
+🕒 **Nosso horário de funcionamento:**
+Segunda a Sexta: 7h às 17h
+Sábado: 8h às 12h
+
+📍 **Local de Retirada:**
+Avenida Imperador, 546 Box-1300 F6 - Centro
+(Beco da Poeira)
+
+{Se relógio clássico, adicione: "✨ Temos outros modelos clássicos como o {sugerir 2 modelos similares da mesma categoria}"}
+{Se relógio esportivo, adicione: "✨ Temos outros modelos esportivos como o {sugerir 2 modelos similares da mesma categoria}"}
+{Se relógio casual, adicione: "✨ Temos outros modelos casuais como o {sugerir 2 modelos similares da mesma categoria}"}
+
+Gostaria de ver mais detalhes ou conhecer outros modelos similares? Estou aqui para ajudar!
+
 ---
 ${context}
 ---
@@ -107,7 +141,7 @@ Pergunta: ${message}`;
     const completion = await openai.chat.completions.create({
       model: 'gpt-4-turbo-preview',
       messages: [{ role: 'system', content: prompt }],
-      max_tokens: 300
+      max_tokens: 600
     });
     const responseText = completion.choices[0].message.content.trim();
     console.log('🤖 IA respondeu:', responseText);
