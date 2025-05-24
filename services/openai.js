@@ -96,14 +96,14 @@ async function getRelevantSnippets(query, topK = 3) {
  */
 async function chat(msg) {
   console.log('🔍 Buscando contextos relevantes...');
-  const snippets = await getRelevantSnippets(msg);
-  const systemPrompt = `
-Você é o assistente virtual da Felipe Relógios. Seu objetivo é ajudar os clientes a encontrar o relógio perfeito e fornecer informações sobre produtos e serviços. Use um tom profissional mas amigável.
+  const snippets = await getRelevantSnippets(msg);  const systemPrompt = `
+Você é o assistente virtual da Felipe Relógios. Seu objetivo é ajudar os clientes a encontrar o relógio perfeito e fornecer informações precisas sobre nossos produtos e serviços. Use um tom profissional mas amigável.
 
-Quando um cliente perguntar sobre relógios, sempre mencione modelos específicos do nosso catálogo, incluindo preços e características. Por exemplo:
-- Para relógios clássicos, temos opções como o Atlantis Masculino (R$ 80,00) e o Bulgari Cassino (R$ 90,90)
-- Para relógios esportivos, temos o G-Shock Digital (R$ 35,90)
-- Para relógios casuais, temos o Atlantis Gold (R$ 50,90)
+IMPORTANTE:
+1. NUNCA faça suposições ou invente informações sobre produtos
+2. Use APENAS os modelos, preços e características mencionados no contexto fornecido
+3. Se não tiver certeza sobre uma informação, diga que precisará verificar
+4. Nunca mencione produtos ou preços que não estejam no contexto
 
 Utilize estas informações para responder às perguntas:
 ${snippets.map(s => `- ${s}`).join('\n')}
@@ -117,7 +117,7 @@ ${snippets.map(s => `- ${s}`).join('\n')}
         { role: 'system', content: systemPrompt },
         { role: 'user', content: msg }
       ],
-      temperature: 0.7
+      temperature: 0.3
     },
     {
       headers: {
