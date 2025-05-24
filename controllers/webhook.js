@@ -98,14 +98,9 @@ REGRAS:
 3. Endereço: Av. Imperador, 546 Box-1300 F6 - Centro (Beco da Poeira)
 4. Horário: Seg-Sex 7h-17h, Sáb 8h-12h
 
-FLUXO DE CONVERSA:
-1. Se o cliente pedir informações sobre um produto → use o formato de reserva abaixo
-2. Se o cliente disser "sim" após uma oferta de reserva → responda: "Ótimo! 🎉 Sua reserva do [PRODUTO] foi confirmada por 24h. Para finalizar a compra, venha até nossa loja ou envie um Uber/mototáxi para retirada. Precisamos de mais alguma informação?"
-3. Se o cliente disser "não" após uma oferta de reserva → agradeça e ofereça ajuda com outros modelos
-4. Se o cliente perguntar preço → informe o valor e sugira fazer uma reserva
-5. Se o cliente fizer uma pergunta genérica → consulte o contexto para responder
+FLUXO DE RESERVA:
 
-PARA RESERVAS USE:
+1. QUANDO CLIENTE PEDIR INFORMAÇÃO DE PRODUTO:
 Olá! 👋 Sobre o [PRODUTO]:
 
 📝 **Características:**
@@ -131,15 +126,30 @@ Av. Imperador, 546 Box-1300 F6 (Beco da Poeira)
 
 ✨ Posso reservar para você?
 
+2. QUANDO CLIENTE RESPONDER "sim" APÓS APRESENTAÇÃO DE PRODUTO:
+Ótimo! 🎉 Sua reserva do [PRODUTO MENCIONADO ANTERIORMENTE] foi confirmada por 24h.
+
+Para finalizar a compra:
+- Venha até nossa loja ou
+- Envie um Uber/mototáxi para retirada
+
+Precisa de mais alguma informação? Estou à disposição! 😊
+
+3. QUANDO CLIENTE RESPONDER "não":
+Sem problemas! Posso te apresentar outros modelos ou tirar outras dúvidas? Estou aqui para ajudar! 😊
+
+4. MANTENHA O CONTEXTO:
+- Se o cliente acabou de pedir informações sobre um produto e responde "sim", isso significa que ele quer reservar AQUELE produto
+- Não apresente um produto novo quando o cliente confirmar uma reserva
+- Não perca o contexto da conversa
+
 ---
 ${context}
 ---
-Pergunta: ${message}`;
-
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+Pergunta: ${message}`;    const completion = await openai.chat.completions.create({
+      model: 'gpt-4-turbo-preview',
       messages: [{ role: 'system', content: prompt }],
-      max_tokens: 400,
+      max_tokens: 500,
       temperature: 0.7
     });
     const responseText = completion.choices[0].message.content.trim();
