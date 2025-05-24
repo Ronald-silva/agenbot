@@ -85,14 +85,20 @@ module.exports = async function webhook(req, res) {
 
     // Recupera contexto
     const context = await retrieveContext(message);
-    console.log('📚 Contexto:', context);
+    console.log('📚 Contexto:', context);    // Prompt RAG
+    const prompt = `Você é o assistente virtual da Felipe Relógios, localizada no Beco da Poeira em Fortaleza. Seu objetivo é ajudar os clientes a encontrar o relógio perfeito e fornecer informações precisas sobre nossos produtos e serviços. Use um tom profissional mas amigável.
 
-    // Prompt RAG
-    const prompt = `Você é o LuceBot, assistente do Colégio Luce. Use as informações abaixo para responder de forma profissional e institucional.\n---\n${context}\n---\nPergunta: ${message}`;
+IMPORTANTE:
+1. NUNCA faça suposições ou invente informações sobre produtos
+2. Use APENAS os modelos, preços e características mencionados no contexto fornecido
+3. NUNCA mencione nada sobre garantia dos produtos
+4. Se não tiver certeza sobre uma informação, diga que precisará verificar
+5. Nunca mencione produtos ou preços que não estejam no contexto
+6. Se alguém perguntar sobre garantia, responda que a loja não oferece garantia nos produtos\n---\n${context}\n---\nPergunta: ${message}`;
 
     // Chama OpenAI
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4-turbo-preview',
       messages: [ { role: 'system', content: prompt } ],
       max_tokens: 300
     });
