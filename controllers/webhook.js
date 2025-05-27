@@ -78,9 +78,9 @@ module.exports = async function webhook(req, res) {  try {
     if (req.body.type !== 'ReceivedCallback' || req.body.fromApi || req.body.fromMe) {
       return res.sendStatus(200);
     }
-    
-    // Identifica tipo de mensagem (texto, áudio, etc)
-    const messageType = req.body.type === 'audio' ? 'áudio' : 'texto';
+      // Identifica tipo de mensagem (texto, áudio, etc)
+    const isAudio = !!req.body.audio || req.body.type === 'audio';
+    const messageType = isAudio ? 'áudio' : 'texto';
     console.log(`📥 Tipo de mensagem recebida: ${messageType}`);
 
     // Extrai telefone
@@ -90,9 +90,23 @@ module.exports = async function webhook(req, res) {  try {
 
     await checkInstance();    // Detecta se é mensagem de áudio ou texto
     let message = req.body.text?.message || req.body.body || req.body.message || '';
-    if (req.body.type === 'audio' && req.body.media?.url) {
+    
+    // Processa áudio - verifica todas as possibilidades de formato
+    if (isAudio) {
       console.log('🎤 Recebida mensagem de voz, transcrevendo...');
-      message = await transcribeAudioFromUrl(req.body.media.url);
+      
+      // Extrai URL do áudio de acordo com o formato recebido
+      let audioUrl;
+      if (req.body.audio?.audioUrl) {
+        audioUrl = req.body.audio.audioUrl;
+      } else if (req.body.media?.url) {
+        audioUrl = req.body.media.url;
+      } else {
+        console.error('❌ URL do áudio não encontrada no payload');
+        return res.status(400).json({ error: 'URL do áudio não encontrada' });
+      }
+      
+      message = await transcribeAudioFromUrl(audioUrl);
       console.log('🗣 Transcrição completa:', message);
     }
     if (!message) return res.status(400).json({ error: 'Mensagem vazia' });

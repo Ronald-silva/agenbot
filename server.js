@@ -25,10 +25,13 @@ app.get('/health', (_, res) => res.sendStatus(200));
 // Webhook de mensagens
 app.post('/webhook', webhook);
 
-// Porta dinâmica fornecida pelo host (Railway, Heroku, etc.)
-const port = process.env.PORT;
+// Porta definida explicitamente como 8080 para o projeto Felipe Relógios
+// Se estivermos em produção, use a porta do ambiente; caso contrário, use 8080
+const port = process.env.NODE_ENV === 'production' ? process.env.PORT : 8080;
+console.log(`🔌 Iniciando servidor na porta: ${port}`);
+// Porta verificada para evitar erros
 if (!port) {
-  console.error('❌ Environment variable PORT is not defined.');
+  console.error('❌ Porta não definida!');
   process.exit(1);
 }
 const host = '0.0.0.0';
