@@ -188,20 +188,30 @@ Cliente: ${message}`;
       { phone, message: responseText },
       { headers: { 'Content-Type': 'application/json', 'Client-Token': CLIENT_TOKEN } }
     );
-      // 2. Gera áudio da resposta (TTS) e envia como mensagem de voz
-    // Usa voz feminina (NOVA) para o bot e velocidade levemente mais rápida para melhor experiência
-    const audioBase64 = await synthesizeSpeech(responseText, AVAILABLE_VOICES.NOVA, { 
-      model: 'tts-1', 
-      speed: 1.1  // Velocidade um pouco mais rápida para melhor fluidez
-    });
     
-    const sendAudioUrl = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-audio-base64`;
-    await axios.post(
-      sendAudioUrl,
-      { phone, audio: audioBase64, filename: 'resposta.mp3' },
-      { headers: { 'Content-Type': 'application/json', 'Client-Token': CLIENT_TOKEN } }
-    );console.log('✅ Enviado com sucesso: texto + mensagem de voz');
-    return res.json({ success: true, responseType: 'text+audio' });
+    // 2. Gera áudio da resposta (TTS) e envia como mensagem de voz
+    try {
+      console.log('🎵 Iniciando síntese de áudio para resposta...');
+      // Usa voz feminina (NOVA) para o bot e velocidade levemente mais rápida para melhor experiência
+      const audioBase64 = await synthesizeSpeech(responseText, AVAILABLE_VOICES.NOVA, { 
+        model: 'tts-1', 
+        speed: 1.1  // Velocidade um pouco mais rápida para melhor fluidez
+      });
+      console.log(`🔊 Áudio gerado com sucesso! (${audioBase64.length} bytes em base64)`);
+        const sendAudioUrl = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-audio`;
+      await axios.post(
+        sendAudioUrl,
+        { phone, base64Audio: audioBase64, fileName: 'resposta.mp3' },
+        { headers: { 'Content-Type': 'application/json', 'Client-Token': CLIENT_TOKEN } }
+      );
+      
+      console.log('✅ Enviado com sucesso: texto + mensagem de voz');
+      return res.json({ success: true, responseType: 'text+audio' });
+    } catch (audioError) {
+      console.error('⚠️ Erro ao processar áudio:', audioError.message);
+      console.log('⚠️ Continuando apenas com a resposta em texto');
+      return res.json({ success: true, responseType: 'text-only' });
+    }
   } catch (err) {
     console.error('❌ Erro webhook:', err.response?.data || err.message);
     return res.status(500).json({ error: 'Erro interno', details: err.response?.data || err.message });
