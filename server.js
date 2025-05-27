@@ -7,6 +7,7 @@ if (process.env.NODE_ENV === 'development') {
 
 const express = require('express');
 const path = require('path');
+// Webhook com suporte a mensagens de texto e voz
 const webhook = require('./controllers/webhook');
 
 const app = express();

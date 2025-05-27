@@ -1,11 +1,13 @@
-// controllers/webhook.js (RAG in-memory via contexts.json)
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').config();
-}
+// controllers/webhook.js (RAG + áudio via Whisper e TTS OpenAI)
+if (process.env.NODE_ENV !== 'production') require('dotenv').config();
 
-const axios    = require('axios');
-const OpenAI   = require('openai');
+const axios  = require('axios');
+const fs     = require('fs');
+const path   = require('path');
+const OpenAI = require('openai');
 const contexts = require('../contexts.json'); // array of {snippet, embedding}
+// Importa serviço de síntese de voz (TTS) para respostas em áudio
+const { synthesizeSpeech, AVAILABLE_VOICES } = require('../services/tts');
 
 // Vars de ambiente
 const INSTANCE_ID    = process.env.ZAPI_INSTANCE_ID?.trim();
@@ -61,30 +63,47 @@ async function checkInstance() {
   }
 }
 
-module.exports = async function webhook(req, res) {
-  console.log('🔥 Payload recebido:', JSON.stringify(req.body));
+// Transcribe áudio via Whisper
+async function transcribeAudioFromUrl(url) {
+  const resp = await axios.get(url, { responseType: 'arraybuffer' });
+  const buffer = Buffer.from(resp.data);
+  const tr = await openai.audio.transcriptions.create({ file: buffer, model: 'whisper-1', response_format: 'text' });
+  return tr;
+}
 
-  // Filtra apenas mensagens de usuário
-  if (req.body.type !== 'ReceivedCallback' || req.body.fromApi || req.body.fromMe) {
-    return res.sendStatus(200);
-  }
+module.exports = async function webhook(req, res) {  try {
+    console.log('🔥 Payload recebido:', JSON.stringify(req.body));
+    
+    // Ignora mensagens enviadas pelo próprio bot ou via API
+    if (req.body.type !== 'ReceivedCallback' || req.body.fromApi || req.body.fromMe) {
+      return res.sendStatus(200);
+    }
+    
+    // Identifica tipo de mensagem (texto, áudio, etc)
+    const messageType = req.body.type === 'audio' ? 'áudio' : 'texto';
+    console.log(`📥 Tipo de mensagem recebida: ${messageType}`);
 
-  // Extrai telefone
-  const rawPhone = req.body.chatId || req.body.phone || '';
-  const phone = rawPhone.split('@')[0];
-  if (!phone) return res.status(400).json({ error: 'Número não encontrado' });
+    // Extrai telefone
+    const rawPhone = req.body.chatId || req.body.phone || '';
+    const phone = rawPhone.split('@')[0];
+    if (!phone) return res.status(400).json({ error: 'Número não encontrado' });
 
-  // Extrai mensagem
-  const message = req.body.text?.message || req.body.body || req.body.message || '';
-  if (!message) return res.status(400).json({ error: 'Mensagem vazia' });
+    await checkInstance();    // Detecta se é mensagem de áudio ou texto
+    let message = req.body.text?.message || req.body.body || req.body.message || '';
+    if (req.body.type === 'audio' && req.body.media?.url) {
+      console.log('🎤 Recebida mensagem de voz, transcrevendo...');
+      message = await transcribeAudioFromUrl(req.body.media.url);
+      console.log('🗣 Transcrição completa:', message);
+    }
+    if (!message) return res.status(400).json({ error: 'Mensagem vazia' });
 
-  console.log(`📩 De ${phone}: "${message}"`);
+    console.log(`📩 De ${phone}: "${message}"`);
 
-  try {
-    await checkInstance();
+    // Recupera contexto
     const context = await retrieveContext(message);
     console.log('📚 Contexto:', context);
 
+    // Prompt RAG
     const prompt = `Você é o assistente da Felipe Relógios (Beco da Poeira). Seja profissional e direto.
 
 PRODUTOS E DESCRIÇÕES EXATAS:
@@ -152,29 +171,39 @@ MANTENHA O CONTEXTO:
 ---
 ${context}
 ---
-Pergunta: ${message}`;
+Cliente: ${message}`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
+    // Chama OpenAI
+    const chatResp = await openai.chat.completions.create({
+      model: 'gpt-4o',
       messages: [{ role: 'system', content: prompt }],
       max_tokens: 500,
       temperature: 0.7
     });
-    const responseText = completion.choices[0].message.content.trim();
-    console.log('🤖 IA respondeu:', responseText);
-
-    // Envia via Z-API
-    const sendUrl = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-text`;
+    const responseText = chatResp.choices[0].message.content.trim();
+    console.log('🤖 Resposta texto:', responseText);    // 1. Envia resposta em formato texto
+    const sendTextUrl = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-text`;
     await axios.post(
-      sendUrl,
+      sendTextUrl,
       { phone, message: responseText },
       { headers: { 'Content-Type': 'application/json', 'Client-Token': CLIENT_TOKEN } }
     );
-    console.log('✅ Z-API respondeu');
-
-    return res.json({ success: true });
+      // 2. Gera áudio da resposta (TTS) e envia como mensagem de voz
+    // Usa voz feminina (NOVA) para o bot e velocidade levemente mais rápida para melhor experiência
+    const audioBase64 = await synthesizeSpeech(responseText, AVAILABLE_VOICES.NOVA, { 
+      model: 'tts-1', 
+      speed: 1.1  // Velocidade um pouco mais rápida para melhor fluidez
+    });
+    
+    const sendAudioUrl = `https://api.z-api.io/instances/${INSTANCE_ID}/token/${INSTANCE_TOKEN}/send-audio-base64`;
+    await axios.post(
+      sendAudioUrl,
+      { phone, audio: audioBase64, filename: 'resposta.mp3' },
+      { headers: { 'Content-Type': 'application/json', 'Client-Token': CLIENT_TOKEN } }
+    );console.log('✅ Enviado com sucesso: texto + mensagem de voz');
+    return res.json({ success: true, responseType: 'text+audio' });
   } catch (err) {
-    console.error('❌ Erro no webhook:', err.response?.data || err.message);
+    console.error('❌ Erro webhook:', err.response?.data || err.message);
     return res.status(500).json({ error: 'Erro interno', details: err.response?.data || err.message });
   }
 };
