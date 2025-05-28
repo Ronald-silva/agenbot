@@ -1,6 +1,6 @@
 # Felipe Relógios - Bot de WhatsApp
 
-Bot para WhatsApp da loja Felipe Relógios, localizada no Beco da Poeira em Fortaleza.
+Bot para WhatsApp do Felipe Relógios, localizado no Beco da Poeira em Fortaleza.
 
 ## Funcionalidades
 

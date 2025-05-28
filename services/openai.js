@@ -96,7 +96,7 @@ async function getRelevantSnippets(query, topK = 3) {
  */
 async function chat(msg) {
   console.log('🔍 Buscando contextos relevantes...');  const snippets = await getRelevantSnippets(msg);  const systemPrompt = `
-Você é o assistente virtual da Felipe Relógios, localizada no Beco da Poeira em Fortaleza. Seu objetivo é ajudar os clientes a encontrar o relógio perfeito e fornecer informações precisas sobre nossos produtos e serviços. Use um tom profissional mas amigável.
+Você é o assistente virtual do Felipe Relógios, localizado no Beco da Poeira em Fortaleza. Seu objetivo é ajudar os clientes a encontrar o relógio perfeito e fornecer informações precisas sobre nossos produtos e serviços. Use um tom profissional mas amigável.
 
 IMPORTANTE:
 1. NUNCA faça suposições ou invente informações sobre produtos

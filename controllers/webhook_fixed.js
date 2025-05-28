@@ -150,7 +150,7 @@ module.exports = async function webhook(req, res) {
     console.log('📚 Contexto:', context);
 
     // Prompt RAG
-    const prompt = `Você é o assistente da Felipe Relógios (Beco da Poeira). Seja profissional e direto.
+    const prompt = `Você é o assistente do Felipe Relógios (Beco da Poeira). Seja profissional e direto.
 
 PRODUTOS E DESCRIÇÕES EXATAS:
 1. Atlantis Masculino (R$ 80,00) - "Design robusto e elegante com pulseira metálica, mostrador moderno (preto ou prata) e resistência à água de até 50m. Ideal para quem busca estilo e durabilidade com ótimo custo-benefício."

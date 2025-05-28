@@ -18,7 +18,7 @@ async function runTTSTests() {
     console.log('🧪 Iniciando testes do serviço TTS...');
 
     // Teste 1: Mensagem curta
-    const shortMessage = "Olá, sou o assistente da Felipe Relógios! Como posso ajudar?";
+    const shortMessage = "Olá, sou o assistente do Felipe Relógios! Como posso ajudar?";
     console.log('\n📝 Teste 1: Mensagem curta');
     const shortAudioPath = path.join(testOutputDir, 'teste_curto.mp3');
     await synthesizeAndSaveToFile(shortMessage, shortAudioPath);
@@ -42,11 +42,10 @@ async function runTTSTests() {
     
     console.log('\n📝 Teste 2: Descrição de produto');
     const mediumAudioPath = path.join(testOutputDir, 'teste_medio.mp3');
-    await synthesizeAndSaveToFile(mediumMessage, mediumAudioPath);
-    
-    // Teste 3: Mensagem longa (deve acionar a segmentação)
+    await synthesizeAndSaveToFile(mediumMessage, mediumAudioPath);    
+    // Teste 3: Mensagem longa (deve acionar a segmentação)    
     const longMessage = `
-    Bem-vindo à Felipe Relógios! Somos uma loja especializada em relógios de alta qualidade, localizada no Beco da Poeira em Fortaleza.
+    Bem-vindo ao Felipe Relógios! Somos uma loja especializada em relógios de alta qualidade, localizada no Beco da Poeira em Fortaleza.
 
     Nosso catálogo completo inclui:
 
@@ -78,7 +77,7 @@ async function runTTSTests() {
     
     // Teste 4: Vozes diferentes
     const testVoices = ['nova', 'alloy', 'shimmer', 'fable'];
-    const sampleText = "Olá, bem-vindo(a) à Felipe Relógios. Como posso ajudar?";
+    const sampleText = "Olá, bem-vindo(a) ao Felipe Relógios. Como posso ajudar?";
     
     console.log('\n📝 Teste 4: Testando diferentes vozes');
     for (const voice of testVoices) {

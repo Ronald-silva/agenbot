@@ -1,6 +1,5 @@
-{
-  "START_STATE": {
-    "message": "👋 Olá, sou o assistente virtual da *Felipe Relógios*.\nComo posso ajudar?\n\n1️⃣ Ver catálogo de produtos\n2️⃣ Informações da loja\n3️⃣ Falar com atendente",
+{  "START_STATE": {
+    "message": "👋 Olá, sou o assistente virtual do *Felipe Relógios*.\nComo posso ajudar?\n\n1️⃣ Ver catálogo de produtos\n2️⃣ Informações da loja\n3️⃣ Falar com atendente",
     "options": {
       "1": "CATALOG_STATE",
       "2": "STORE_INFO_STATE", 
