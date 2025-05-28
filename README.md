@@ -9,8 +9,8 @@ Bot para WhatsApp da loja Felipe Relógios, localizada no Beco da Poeira em Fort
 - ✅ **Reserva de Produtos**: Fluxo estruturado para reserva de produtos
 - ✅ **Sugestões de Produtos Similares**: Recomendações baseadas em categoria
 - ✅ **Processamento de Áudio**: 
-  - Recebimento e transcrição de mensagens de voz 
-  - Respostas em formato de áudio
+  - Recebimento e transcrição de mensagens de voz (robusto a erros de payload)
+  - Respostas em formato de áudio com TTS avançado
 
 ## Tecnologias
 
@@ -29,6 +29,45 @@ Bot para WhatsApp da loja Felipe Relógios, localizada no Beco da Poeira em Fort
 3. Configure as variáveis de ambiente no arquivo `.env`:
    ```
    OPENAI_API_KEY=sk-...
+   ZAPI_INSTANCE_ID=seu_id
+   ZAPI_INSTANCE_TOKEN=seu_token
+   ZAPI_CLIENT_TOKEN=seu_client_token
+   PORT=8080
+   ```
+
+## Deploy em Produção
+
+Para deploy em ambiente de produção:
+
+1. Instale PM2 globalmente:
+   ```
+   npm install -g pm2
+   ```
+
+2. Use o script de deploy:
+   ```
+   chmod +x deploy.sh
+   ./deploy.sh
+   ```
+
+3. Ou inicie com PM2 diretamente:
+   ```
+   pm2 start ecosystem.config.js
+   ```
+
+4. Monitore o serviço:
+   ```
+   pm2 logs felipe-bot
+   ```
+
+## Tratamento de Erros
+
+O bot possui tratamento robusto para:
+
+- Payloads de áudio malformados
+- Problemas de conectividade temporária
+- Erros na API do WhatsApp
+- Falhas na transcrição de áudio
    ZAPI_INSTANCE_ID=...
    ZAPI_INSTANCE_TOKEN=...
    ZAPI_CLIENT_TOKEN=...
@@ -93,6 +132,26 @@ Este script simula:
 - Processamento de mensagens de texto
 - Fluxo de confirmação de reserva
 - (Simulação de mensagens de áudio requer URL de áudio real)
+
+## Troubleshooting
+
+### Erros com Mensagens de Áudio
+
+Se o bot não responde a mensagens de voz ou apresenta erros como `Could not parse multipart form`:
+
+1. Verifique se o diretório `temp` existe e tem permissões de escrita
+2. Execute `node scripts/init.js` para criar diretórios necessários
+3. Teste o processamento de áudio com `node test/transcription_test.js`
+4. Verifique os logs de erro para mais detalhes
+
+### Problemas de Conexão
+
+Se o bot não consegue se conectar à Z-API:
+
+1. Verifique o status da instância em https://app.z-api.io
+2. Confirme que o telefone está conectado no WhatsApp Web
+3. Verifique se os tokens estão corretos no arquivo `.env`
+4. Teste a conexão com `node test/bot.test.js`
 
 ## Estrutura do Projeto
 

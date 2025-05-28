@@ -66,12 +66,51 @@ async function checkInstance() {
 // Transcribe áudio via Whisper
 async function transcribeAudioFromUrl(url) {
   try {
+    const fs = require('fs');
+    const path = require('path');
+    const { v4: uuidv4 } = require('uuid');
+    
+    console.log('🔄 Baixando arquivo de áudio da URL:', url);
     const resp = await axios.get(url, { responseType: 'arraybuffer' });
     const buffer = Buffer.from(resp.data);
-    const tr = await openai.audio.transcriptions.create({ file: buffer, model: 'whisper-1', response_format: 'text' });
+    
+    // Cria um arquivo temporário para o áudio
+    const tempDir = path.join(__dirname, '..', 'temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    
+    // Gera um nome único para o arquivo de áudio
+    const fileName = `audio_${uuidv4()}.ogg`;
+    const filePath = path.join(tempDir, fileName);
+    
+    console.log(`💾 Salvando áudio em: ${filePath}`);
+    fs.writeFileSync(filePath, buffer);
+    
+    // Lê o arquivo e passa para a API do Whisper
+    const fileStream = fs.createReadStream(filePath);
+    console.log('🎙️ Enviando áudio para transcrição via Whisper API...');
+    
+    // Criando objeto File para a API do OpenAI
+    const tr = await openai.audio.transcriptions.create({
+      file: fileStream,
+      model: 'whisper-1',
+      response_format: 'text'
+    });
+    
+    console.log('🧹 Limpando arquivo temporário');
+    try {
+      fs.unlinkSync(filePath); // Remove o arquivo temporário
+    } catch (cleanupError) {
+      console.warn('⚠️ Não foi possível remover o arquivo temporário:', cleanupError.message);
+    }
+    
     return tr;
   } catch (error) {
     console.error('❌ Erro ao transcrever áudio:', error.message);
+    if (error.response) {
+      console.error('📄 Detalhes do erro:', error.response.data);
+    }
     throw new Error(`Falha na transcrição: ${error.message}`);
   }
 }

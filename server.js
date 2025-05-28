@@ -5,6 +5,10 @@ if (process.env.NODE_ENV === 'development') {
   require('dotenv').config();
 }
 
+// Inicialização de diretórios e estruturas necessárias
+console.log('🔧 Inicializando estruturas para o bot Felipe Relógios...');
+require('./scripts/init');
+
 const express = require('express');
 const path = require('path');
 // Webhook com suporte a mensagens de texto e voz
